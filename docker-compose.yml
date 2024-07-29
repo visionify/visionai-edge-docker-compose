@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Prometheus service for monitoring
   prometheus:
     image: prom/prometheus:latest
     container_name: visionai-prometheus
@@ -16,6 +17,7 @@ services:
     networks:
       - visionai-network
 
+  # Grafana service for visualization
   grafana:
     image: grafana/grafana:latest
     container_name: visionai-grafana
@@ -34,18 +36,21 @@ services:
     networks:
       - visionai-network
 
+  # cAdvisor service for container monitoring
   cadvisor:
     image: gcr.io/cadvisor/cadvisor
+    container_name: visionai-cadvisor
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:rw
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
     ports:
-      - "9092:8080"
+      - '9092:8080'
     networks:
       - visionai-network
 
+  # Triton Inference Server
   visionai-triton:
     image: nvcr.io/nvidia/tritonserver:23.10-py3
     container_name: visionai-triton
@@ -58,17 +63,17 @@ services:
           - driver: nvidia
             count: 1
             capabilities: [gpu]
-    # mem_limit: 2g
     ports:
-      - 8000:8000
-      - 8001:8001
-      - 8002:8002
+      - '8000:8000'
+      - '8001:8001'
+      - '8002:8002'
     volumes:
       - $HOME/.visionai/models-repo:/models
     command: ["tritonserver", "--model-store=/models"]
     networks:
       - visionai-network
 
+  # VisionAI API Instances
   visionai-api:
     image: visionify/visionai-api:latest
     deploy:
@@ -78,8 +83,8 @@ services:
     env_file:
       - ./.env
     ports:
-      - 3002:3002
-      - 3003:3003
+      - '3002:3002'
+      - '3003:3003'
     volumes:
       - ./.env:/App/.env
       - ${HOME}/.visionai:/App/.visionai
@@ -101,8 +106,8 @@ services:
     env_file:
       - ./.env2
     ports:
-      - 3012:3012
-      - 3013:3013
+      - '3012:3012'
+      - '3013:3013'
     volumes:
       - ./.env2:/App/.env
       - ${HOME}/.visionai2:/App/.visionai
@@ -124,8 +129,8 @@ services:
     env_file:
       - ./.env3
     ports:
-      - 3014:3014
-      - 3015:3015
+      - '3014:3014'
+      - '3015:3015'
     volumes:
       - ./.env3:/App/.env
       - ${HOME}/.visionai3:/App/.visionai
@@ -147,11 +152,11 @@ services:
     env_file:
       - ./.env4
     ports:
-      - 3016:3016
-      - 3017:3017
+      - '3016:3016'
+      - '3017:3017'
     volumes:
       - ./.env4:/App/.env
-      - ${HOME}/.visionai3:/App/.visionai
+      - ${HOME}/.visionai4:/App/.visionai
     environment:
       HOST_PATH: /App/.visionai
       INSTANCE_ID: "4"
@@ -161,6 +166,7 @@ services:
       - visionai-triton
     command: ["python3", "server.py"]
 
+  # VisionAI Screenshots Service
   visionai-screenshots:
     build: .
     image: visionify/visionai-screenshots:latest
@@ -171,12 +177,10 @@ services:
       - ./.env
     restart: unless-stopped
 
-  
-  
-
 networks:
   visionai-network:
     driver: bridge
+    name: visionai-network
 
 volumes:
   prometheus_data:

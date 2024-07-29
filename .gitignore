@@ -1,2 +1,8 @@
-prometheus_data
-grafana_data
+# Ignore Prometheus data directory
+prometheus_data/
+
+# Ignore Grafana data directory
+grafana_data/
+
+# Ignore environment configuration files
+.env

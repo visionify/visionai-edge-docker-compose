@@ -8,3 +8,13 @@ scrape_configs:
   - job_name: 'visionai_api_scrape'
     static_configs:
       - targets: ['visionai-api:3003', 'visionai-api-2:3013']
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+# Configure Prometheus to send metrics to Grafana Cloud
+# remote_write:
+#   - url: 'https://<YOUR-GRAFANA-CLOUD-PROMETHEUS-ENDPOINT>/api/prom/push'
+#     basic_auth:
+#       username: '<YOUR-API-KEY>'
+#       password: ''
