@@ -177,6 +177,25 @@ services:
       - ./.env
     restart: unless-stopped
 
+  # VisionAI Alerts Service
+  visionai-alerts:
+    image: visionify/visionai-alerts:latest
+    deploy:
+      restart_policy:
+        condition: on-failure
+    container_name: visionai-alerts
+    env_file:
+      - ./.env
+    ports:
+      - '8010:8010'
+    volumes:
+      - ./.env:/App/.env
+      - ./alerts_data:/app/data
+    networks:
+      - visionai-network
+    depends_on:
+      - visionai-api
+
 networks:
   visionai-network:
     driver: bridge
