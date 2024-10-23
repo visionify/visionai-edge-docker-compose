@@ -73,13 +73,13 @@ services:
     networks:
       - visionai-network
 
-  # VisionAI API Instances
-  visionai-api:
-    image: visionify/visionai-api:latest
+  # VisionAI Inference Instances
+  visionai-inference:
+    image: visionify/visionai-inference:latest
     deploy:
       restart_policy:
         condition: on-failure
-    container_name: visionai-api
+    container_name: visionai-inference
     env_file:
       - ./.env
     ports:
@@ -95,14 +95,14 @@ services:
       - visionai-network
     depends_on:
       - visionai-triton
-    command: ["python3", "server.py"]
+    command: ["python3", "main.py"]
 
-  visionai-api-2:
-    image: visionify/visionai-api:latest
+  visionai-inference-2:
+    image: visionify/visionai-inference:latest
     deploy:
       restart_policy:
         condition: on-failure
-    container_name: visionai-api-2
+    container_name: visionai-inference-2
     env_file:
       - ./.env2
     ports:
@@ -118,14 +118,14 @@ services:
       - visionai-network
     depends_on:
       - visionai-triton
-    command: ["python3", "server.py"]
+    command: ["python3", "main.py"]
 
-  visionai-api-3:
-    image: visionify/visionai-api:latest
+  visionai-inference-3:
+    image: visionify/visionai-inference:latest
     deploy:
       restart_policy:
         condition: on-failure
-    container_name: visionai-api-3
+    container_name: visionai-inference-3
     env_file:
       - ./.env3
     ports:
@@ -141,14 +141,14 @@ services:
       - visionai-network
     depends_on:
       - visionai-triton
-    command: ["python3", "server.py"]
+    command: ["python3", "main.py"]
 
-  visionai-api-4:
-    image: visionify/visionai-api:latest
+  visionai-inference-4:
+    image: visionify/visionai-inference:latest
     deploy:
       restart_policy:
         condition: on-failure
-    container_name: visionai-api-4
+    container_name: visionai-inference-4
     env_file:
       - ./.env4
     ports:
@@ -164,7 +164,7 @@ services:
       - visionai-network
     depends_on:
       - visionai-triton
-    command: ["python3", "server.py"]
+    command: ["python3", "main.py"]
 
   # VisionAI Screenshots Service
   visionai-screenshots:
