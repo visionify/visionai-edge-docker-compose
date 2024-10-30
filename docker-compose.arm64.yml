@@ -52,9 +52,14 @@ services:
 
   # Triton Inference Server
   visionai-triton:
-    image: nvcr.io/nvidia/tritonserver:23.10-py3
+    image: nvcr.io/nvidia/tritonserver:24.10-py3-igpu
     runtime: nvidia
     container_name: visionai-triton
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - LD_LIBRARY_PATH=/usr/lib/llvm-8/lib
+      - CUDA_VISIBLE_DEVICES=0
     deploy:
       restart_policy:
         condition: on-failure
@@ -76,7 +81,8 @@ services:
 
   # VisionAI Inference Instances
   visionai-inference:
-    image: visionify/visionai-inference:arm64-nopyarmor
+    image: visionify/visionai-inference:arm64-latest
+    runtime: nvidia
     deploy:
       restart_policy:
         condition: on-failure
@@ -98,74 +104,77 @@ services:
       - visionai-triton
     command: ["python3", "main.py"]
 
-  # visionai-inference-2:
-  #   image: visionify/visionai-inference:latest
-  #   deploy:
-  #     restart_policy:
-  #       condition: on-failure
-  #   container_name: visionai-inference-2
-  #   env_file:
-  #     - ./.env2
-  #   ports:
-  #     - '3012:3012'
-  #     - '3013:3013'
-  #   volumes:
-  #     - ./.env2:/App/.env
-  #     - ${HOME}/.visionai2:/App/.visionai
-  #   environment:
-  #     HOST_PATH: /App/.visionai
-  #     INSTANCE_ID: "2"
-  #   networks:
-  #     - visionai-network
-  #   depends_on:
-  #     - visionai-triton
-  #   command: ["python3", "main.py"]
+  visionai-inference-2:
+    image: visionify/visionai-inference:arm64-latest
+    runtime: nvidia
+    deploy:
+      restart_policy:
+        condition: on-failure
+    container_name: visionai-inference-2
+    env_file:
+      - ./.env2
+    ports:
+      - '3012:3012'
+      - '3013:3013'
+    volumes:
+      - ./.env2:/App/.env
+      - ${HOME}/.visionai2:/App/.visionai
+    environment:
+      HOST_PATH: /App/.visionai
+      INSTANCE_ID: "2"
+    networks:
+      - visionai-network
+    depends_on:
+      - visionai-triton
+    command: ["python3", "main.py"]
 
-  # visionai-inference-3:
-  #   image: visionify/visionai-inference:latest
-  #   deploy:
-  #     restart_policy:
-  #       condition: on-failure
-  #   container_name: visionai-inference-3
-  #   env_file:
-  #     - ./.env3
-  #   ports:
-  #     - '3014:3014'
-  #     - '3015:3015'
-  #   volumes:
-  #     - ./.env3:/App/.env
-  #     - ${HOME}/.visionai3:/App/.visionai
-  #   environment:
-  #     HOST_PATH: /App/.visionai
-  #     INSTANCE_ID: "3"
-  #   networks:
-  #     - visionai-network
-  #   depends_on:
-  #     - visionai-triton
-  #   command: ["python3", "main.py"]
+  visionai-inference-3:
+    image: visionify/visionai-inference:arm64-latest
+    runtime: nvidia
+    deploy:
+      restart_policy:
+        condition: on-failure
+    container_name: visionai-inference-3
+    env_file:
+      - ./.env3
+    ports:
+      - '3014:3014'
+      - '3015:3015'
+    volumes:
+      - ./.env3:/App/.env
+      - ${HOME}/.visionai3:/App/.visionai
+    environment:
+      HOST_PATH: /App/.visionai
+      INSTANCE_ID: "3"
+    networks:
+      - visionai-network
+    depends_on:
+      - visionai-triton
+    command: ["python3", "main.py"]
 
-  # visionai-inference-4:
-  #   image: visionify/visionai-inference:latest
-  #   deploy:
-  #     restart_policy:
-  #       condition: on-failure
-  #   container_name: visionai-inference-4
-  #   env_file:
-  #     - ./.env4
-  #   ports:
-  #     - '3016:3016'
-  #     - '3017:3017'
-  #   volumes:
-  #     - ./.env4:/App/.env
-  #     - ${HOME}/.visionai4:/App/.visionai
-  #   environment:
-  #     HOST_PATH: /App/.visionai
-  #     INSTANCE_ID: "4"
-  #   networks:
-  #     - visionai-network
-  #   depends_on:
-  #     - visionai-triton
-  #   command: ["python3", "main.py"]
+  visionai-inference-4:
+    image: visionify/visionai-inference:arm64-latest
+    runtime: nvidia
+    deploy:
+      restart_policy:
+        condition: on-failure
+    container_name: visionai-inference-4
+    env_file:
+      - ./.env4
+    ports:
+      - '3016:3016'
+      - '3017:3017'
+    volumes:
+      - ./.env4:/App/.env
+      - ${HOME}/.visionai4:/App/.visionai
+    environment:
+      HOST_PATH: /App/.visionai
+      INSTANCE_ID: "4"
+    networks:
+      - visionai-network
+    depends_on:
+      - visionai-triton
+    command: ["python3", "main.py"]
 
   # VisionAI Screenshots Service
   visionai-screenshots:
