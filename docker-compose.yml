@@ -28,58 +28,45 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=secret
       - GF_SERVER_HTTP_PORT=9091
-      - GF_LOG_LEVEL=debug
-    depends_on:
-      - prometheus
     ports:
       - '9091:9091'
-    networks:
-      - visionai-network
-
-  # cAdvisor service for container monitoring
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor
-    container_name: visionai-cadvisor
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:rw
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    ports:
-      - '9092:8080'
     networks:
       - visionai-network
 
   # Triton Inference Server
   visionai-triton:
     image: nvcr.io/nvidia/tritonserver:23.10-py3
+    platform: linux/amd64
     container_name: visionai-triton
-    deploy:
-      restart_policy:
-        condition: on-failure
-      resources:
-        reservations:
-          devices:
-          - driver: nvidia
-            count: 1
-            capabilities: [gpu]
+    restart: unless-stopped
     ports:
       - '8000:8000'
       - '8001:8001'
       - '8002:8002'
     volumes:
-      - $HOME/.visionai/models-repo:/models
-    command: ["tritonserver", "--model-store=/models"]
+      - ${HOME}/.visionai/models-repo:/models
+    environment:
+      - CUDA_VISIBLE_DEVICES=-1  # Disable GPU
+    command: [
+      "tritonserver",
+      "--model-store=/models",
+      "--allow-http=true",
+      "--allow-grpc=true",
+      "--allow-metrics=true",
+    ]
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
     networks:
       - visionai-network
 
   # VisionAI Inference Instances
-  visionai-inference:
-    image: visionify/visionai-inference:latest
-    deploy:
-      restart_policy:
-        condition: on-failure
-    container_name: visionai-inference
+  visionai-inference-1:
+    image: visionify/visionai-inference:test
+    container_name: visionai-inference-1
+    restart: unless-stopped
     env_file:
       - ./.env
     ports:
@@ -95,22 +82,19 @@ services:
       - visionai-network
     depends_on:
       - visionai-triton
-    command: ["python3", "main.py"]
 
   visionai-inference-2:
-    image: visionify/visionai-inference:latest
-    deploy:
-      restart_policy:
-        condition: on-failure
+    image: visionify/visionai-inference:test
     container_name: visionai-inference-2
+    restart: unless-stopped
     env_file:
-      - ./.env2
+      - ./.env
     ports:
       - '3012:3012'
       - '3013:3013'
     volumes:
-      - ./.env2:/App/.env
-      - ${HOME}/.visionai2:/App/.visionai
+      - ./.env:/App/.env
+      - ${HOME}/.visionai:/App/.visionai
     environment:
       HOST_PATH: /App/.visionai
       INSTANCE_ID: "2"
@@ -118,70 +102,23 @@ services:
       - visionai-network
     depends_on:
       - visionai-triton
-    command: ["python3", "main.py"]
-
-  visionai-inference-3:
-    image: visionify/visionai-inference:latest
-    deploy:
-      restart_policy:
-        condition: on-failure
-    container_name: visionai-inference-3
-    env_file:
-      - ./.env3
-    ports:
-      - '3014:3014'
-      - '3015:3015'
-    volumes:
-      - ./.env3:/App/.env
-      - ${HOME}/.visionai3:/App/.visionai
-    environment:
-      HOST_PATH: /App/.visionai
-      INSTANCE_ID: "3"
-    networks:
-      - visionai-network
-    depends_on:
-      - visionai-triton
-    command: ["python3", "main.py"]
-
-  visionai-inference-4:
-    image: visionify/visionai-inference:latest
-    deploy:
-      restart_policy:
-        condition: on-failure
-    container_name: visionai-inference-4
-    env_file:
-      - ./.env4
-    ports:
-      - '3016:3016'
-      - '3017:3017'
-    volumes:
-      - ./.env4:/App/.env
-      - ${HOME}/.visionai4:/App/.visionai
-    environment:
-      HOST_PATH: /App/.visionai
-      INSTANCE_ID: "4"
-    networks:
-      - visionai-network
-    depends_on:
-      - visionai-triton
-    command: ["python3", "main.py"]
 
   # VisionAI Screenshots Service
   visionai-screenshots:
-    build: .
     image: visionify/visionai-screenshots:latest
     container_name: visionai-screenshots
-    networks:
-      - visionai-network
+    restart: unless-stopped
     env_file:
       - ./.env
-    restart: unless-stopped
+    networks:
+      - visionai-network
 
 networks:
   visionai-network:
     driver: bridge
-    name: visionai-network
 
 volumes:
   prometheus_data:
+    driver: local
   grafana_data:
+    driver: local

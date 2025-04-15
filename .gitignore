@@ -6,3 +6,4 @@ grafana_data/
 
 # Ignore environment configuration files
 *.env
+*.env2
