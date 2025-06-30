@@ -8,7 +8,6 @@ scrape_configs:
     static_configs:
       - targets: ['visionai-inference:3003', 'visionai-inference-2:3005']
 
-
 # Configure Prometheus to send metrics to Grafana Cloud
 # remote_write:
 #   - url: 'https://<YOUR-GRAFANA-CLOUD-PROMETHEUS-ENDPOINT>/api/prom/push'

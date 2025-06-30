@@ -118,6 +118,7 @@ services:
           - driver: nvidia
             count: all
             capabilities: [gpu]
+
     env_file:
       - ./.env
     ports:
@@ -131,6 +132,7 @@ services:
       - visionai-network
     depends_on: 
       - visionai-triton
+
 
   # ============================================================================
   # AUXILIARY SERVICES
