@@ -118,7 +118,6 @@ services:
           - driver: nvidia
             count: all
             capabilities: [gpu]
-
     env_file:
       - ./.env
     ports:
@@ -141,7 +140,7 @@ services:
   # VisionAI Screenshots Service - Image capture and storage
   visionai-screenshots:
     build: .
-    image: visionify/visionai-screenshots:test
+    image: visionify/visionai-screenshots:latest
     container_name: visionai-screenshots
     networks:
       - visionai-network
