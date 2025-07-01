@@ -134,22 +134,19 @@ services:
     depends_on: 
       - visionai-triton
 
-
   # ============================================================================
   # AUXILIARY SERVICES
   # ============================================================================
   
   # VisionAI Screenshots Service - Image capture and storage
   visionai-screenshots:
-    build: .
     image: visionify/visionai-screenshots:latest
     container_name: visionai-screenshots
-    networks:
-      - visionai-network
+    restart: unless-stopped
     env_file:
       - ./.env
-    restart: unless-stopped
-
+    networks:
+      - visionai-network
 # ============================================================================
 # NETWORK CONFIGURATION
 # ============================================================================
