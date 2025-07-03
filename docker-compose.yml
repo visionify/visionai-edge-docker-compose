@@ -79,7 +79,7 @@ services:
 
   # VisionAI Inference Engine - Main AI processing service
   visionai-inference:
-    image: visionify/visionai-inference:latest
+    image: visionify/visionai-inference:test
     container_name: visionai-inference
     restart: unless-stopped
     deploy:
@@ -107,7 +107,7 @@ services:
       - visionai-triton
 
   visionai-inference-2:
-    image: visionify/visionai-inference:latest
+    image: visionify/visionai-inference:test
     container_name: visionai-inference-2
     restart: unless-stopped
     deploy:
@@ -140,7 +140,7 @@ services:
   
   # VisionAI Screenshots Service - Image capture and storage
   visionai-screenshots:
-    image: visionify/visionai-screenshots:latest
+    image: visionify/visionai-screenshots:test
     container_name: visionai-screenshots
     restart: unless-stopped
     env_file:
