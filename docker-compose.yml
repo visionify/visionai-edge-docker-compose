@@ -4,6 +4,7 @@ version: '3.8'
 # This file contains all services required for the VisionAI Edge deployment
 
 services:
+
   # ============================================================================
   # MONITORING SERVICES
   # ============================================================================
@@ -72,14 +73,14 @@ services:
       - '8001:8001'  # gRPC endpoint
       - '8002:8002'  # Metrics endpoint
     volumes:
-      - $HOME/.visionai/models-repo:/models
+      - $HOME/dev/.visionai/models-repo:/models
     command: ["tritonserver", "--model-store=/models"]
     networks:
       - visionai-network
 
   # VisionAI Inference Engine - Main AI processing service
   visionai-inference:
-    image: visionify/visionai-inference:test
+    image: visionify/visionai-inference:hexion
     container_name: visionai-inference
     restart: unless-stopped
     deploy:
@@ -106,47 +107,7 @@ services:
     depends_on: 
       - visionai-triton
 
-  visionai-inference-2:
-    image: visionify/visionai-inference:test
-    container_name: visionai-inference-2
-    restart: unless-stopped
-    deploy:
-      restart_policy:
-        condition: unless-stopped
-      resources:
-        reservations:
-          devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
-    env_file:
-      - ./.env
-    ports:
-      - '3004:3004'  # API endpoint
-      - '3005:3005'  # Metrics check endpoint
-    volumes:
-      - ${HOME}/.visionai:/App/.visionai
-    environment:
-      - INSTANCE_ID=2
-      - METRICS_PORT=3005
-    networks:
-      - visionai-network
-    depends_on: 
-      - visionai-triton
 
-  # ============================================================================
-  # AUXILIARY SERVICES
-  # ============================================================================
-  
-  # VisionAI Screenshots Service - Image capture and storage
-  visionai-screenshots:
-    image: visionify/visionai-screenshots:test
-    container_name: visionai-screenshots
-    restart: unless-stopped
-    env_file:
-      - ./.env
-    networks:
-      - visionai-network
 # ============================================================================
 # NETWORK CONFIGURATION
 # ============================================================================
