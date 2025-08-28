@@ -73,7 +73,7 @@ services:
       - '8001:8001'  # gRPC endpoint
       - '8002:8002'  # Metrics endpoint
     volumes:
-      - $HOME/dev/.visionai/models-repo:/models
+      - $HOME/.visionai/models-repo:/models
     command: ["tritonserver", "--model-store=/models"]
     networks:
       - visionai-network
