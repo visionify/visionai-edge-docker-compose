@@ -9,7 +9,7 @@ services:
   # ============================================================================
   
   # Prometheus - Metrics collection and storage
-  prometheus:
+  visionai-prometheus:
     image: prom/prometheus:latest
     container_name: visionai-prometheus
     restart: unless-stopped
@@ -27,7 +27,7 @@ services:
       - visionai-network
 
   # Grafana - Metrics visualization and dashboards
-  grafana:
+  visionai-grafana:
     image: grafana/grafana:latest
     container_name: visionai-grafana
     restart: unless-stopped
@@ -84,7 +84,7 @@ services:
     restart: unless-stopped
     deploy:
       restart_policy:
-        condition: unless-stopped
+        condition: Always
       resources:
         reservations:
           devices:
@@ -112,7 +112,7 @@ services:
     restart: unless-stopped
     deploy:
       restart_policy:
-        condition: unless-stopped
+        condition: Always
       resources:
         reservations:
           devices:
@@ -139,14 +139,15 @@ services:
   # ============================================================================
   
   # VisionAI Screenshots Service - Image capture and storage
-  visionai-screenshots:
-    image: visionify/visionai-screenshots:test
-    container_name: visionai-screenshots
-    restart: unless-stopped
-    env_file:
-      - ./.env
-    networks:
-      - visionai-network
+#  visionai-screenshots:
+#    image: visionify/visionai-screenshots:test
+#    container_name: visionai-screenshots
+#    restart: unless-stopped
+#    env_file:
+#      - ./.env
+#    networks:
+#      - visionai-network
+
 # ============================================================================
 # NETWORK CONFIGURATION
 # ============================================================================
