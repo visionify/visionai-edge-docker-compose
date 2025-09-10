@@ -41,7 +41,7 @@ services:
       - GF_LOG_LEVEL=info
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     depends_on:
-      - prometheus
+      - visionai-prometheus
     ports:
       - '9091:9091'
     networks:
@@ -84,7 +84,7 @@ services:
     restart: unless-stopped
     deploy:
       restart_policy:
-        condition: Always
+        condition: always
       resources:
         reservations:
           devices:
@@ -112,7 +112,7 @@ services:
     restart: unless-stopped
     deploy:
       restart_policy:
-        condition: Always
+        condition: always
       resources:
         reservations:
           devices:
