@@ -106,33 +106,22 @@ services:
     depends_on: 
       - visionai-triton
 
-  visionai-inference-2:
-    image: visionify/visionai-inference:test
-    container_name: visionai-inference-2
-    restart: unless-stopped
-    deploy:
-      restart_policy:
-        condition: always
-      resources:
-        reservations:
-          devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
-    env_file:
-      - ./.env
-    ports:
-      - '3004:3004'  # API endpoint
-      - '3005:3005'  # Metrics check endpoint
-    volumes:
-      - ${HOME}/.visionai:/App/.visionai
-    environment:
-      - INSTANCE_ID=2
-      - METRICS_PORT=3005
-    networks:
-      - visionai-network
-    depends_on: 
-      - visionai-triton
+  visionai-vit:
+      image: visionify/visionai-vit
+      container_name: visionai-vit
+      runtime: nvidia
+      env_file:
+        - ./.env
+      environment:
+        HF_HOME: /root/.cache/huggingface
+        NVIDIA_VISIBLE_DEVICES: all
+        NVIDIA_DRIVER_CAPABILITIES: all
+      volumes:
+        - hf-cache:/root/.cache/huggingface
+      ports:
+        - "2020:2020"
+      command: ["python", "main.py"]
+      restart: unless-stopped
 
   # ============================================================================
   # AUXILIARY SERVICES
@@ -163,4 +152,6 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  hf-cache:
     driver: local
