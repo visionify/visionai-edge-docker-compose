@@ -82,7 +82,7 @@ services:
   visionai-inference:
     image: visionify/visionai-inference:hexion
     container_name: visionai-inference
-    restart: unless-stopped
+    restart: always
     deploy:
       restart_policy:
         condition: unless-stopped
