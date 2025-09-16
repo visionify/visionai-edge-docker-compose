@@ -108,6 +108,25 @@ services:
       - visionai-triton
 
 
+  # visionai-vit
+  visionai-vit:
+    image: visionify/visionai-vit
+    container_name: visionai-vit
+    runtime: nvidia
+    env_file:
+      - ./.env
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    ports:
+      - "2020:2020"
+    command: ["python", "main.py"]
+    restart: unless-stopped
+
+
 # ============================================================================
 # NETWORK CONFIGURATION
 # ============================================================================
@@ -124,3 +143,6 @@ volumes:
     driver: local
   grafana_data:
     driver: local
+  hf-cache:
+    driver: local
+
