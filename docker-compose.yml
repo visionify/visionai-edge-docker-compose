@@ -125,6 +125,8 @@ services:
       - "2020:2020"
     command: ["python", "main.py"]
     restart: unless-stopped
+    networks:
+      - visionai-network
 
 
 # ============================================================================
