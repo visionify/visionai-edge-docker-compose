@@ -92,7 +92,7 @@ services:
 
   # VisionAI Inference Engine - Main AI processing service
   visionai-inference:
-    image: visionify/visionai-inference:test
+    image: visionify/visionai-inference:hexion
     container_name: visionai-inference
     restart: unless-stopped
     deploy:
@@ -120,7 +120,7 @@ services:
       - visionai-triton
 
   visionai-inference-2:
-    image: visionify/visionai-inference:test
+    image: visionify/visionai-inference:hexion
     container_name: visionai-inference-2
     restart: unless-stopped
     deploy:
