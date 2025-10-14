@@ -120,35 +120,7 @@ services:
     depends_on: 
       - visionai-triton
 
-  visionai-inference-2:
-    image: visionify/visionai-inference:hexion
-    container_name: visionai-inference-2
-    restart: unless-stopped
-    deploy:
-      restart_policy:
-        condition: always
-      resources:
-        reservations:
-          devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
-    env_file:
-      - ./.env
-    ports:
-      - '3004:3004'  # API endpoint
-      - '3005:3005'  # Metrics check endpoint
-    volumes:
-      - ${HOME}/.visionai:/App/.visionai
-    environment:
-      - INSTANCE_ID=2
-      - METRICS_PORT=3005
-    networks:
-      - visionai-network
-    depends_on: 
-      - visionai-triton
-
-  # visionai-vit
+  # VisionAI VIT - Vision Transformer for AI processing
   visionai-vit:
     image: visionify/visionai-vit
     container_name: visionai-vit
