@@ -2,6 +2,7 @@ version: '3.8'
 # VisionAI Edge Platform - Docker Compose Configuration
 # This file contains all services required for the VisionAI Edge deployment
 services:
+
   # ============================================================================
   # MONITORING SERVICES
   # ============================================================================
@@ -94,7 +95,7 @@ services:
   visionai-inference:
     image: visionify/visionai-inference:hexion
     container_name: visionai-inference
-    restart: unless-stopped
+    restart: always
     deploy:
       restart_policy:
         condition: always
@@ -147,6 +148,25 @@ services:
     depends_on: 
       - visionai-triton
 
+  # visionai-vit
+  visionai-vit:
+    image: visionify/visionai-vit
+    container_name: visionai-vit
+    runtime: nvidia
+    env_file:
+      - ./.env
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    ports:
+      - "2020:2020"
+    command: ["python", "main.py"]
+    restart: unless-stopped
+    networks:
+      - visionai-network
 # ============================================================================
 # NETWORK CONFIGURATION
 # ============================================================================
@@ -163,3 +183,6 @@ volumes:
     driver: local
   grafana_data:
     driver: local
+  hf-cache:
+    driver: local
+
