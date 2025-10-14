@@ -1,13 +1,11 @@
 version: '3.8'
-
 # VisionAI Edge Platform - Docker Compose Configuration
 # This file contains all services required for the VisionAI Edge deployment
-
 services:
   # ============================================================================
   # MONITORING SERVICES
   # ============================================================================
-  
+
   # Prometheus - Metrics collection and storage
   visionai-prometheus:
     image: prom/prometheus:latest
@@ -40,6 +38,21 @@ services:
       - GF_SERVER_HTTP_PORT=9091
       - GF_LOG_LEVEL=info
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
+      - GF_ANALYTICS_GOOGLE_ANALYTICS_UA_ID=
+      - GF_ANALYTICS_FEEDBACK_LINKS_ENABLED=false
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=false
+      - GF_PLUGINS_ENABLE_ALPHA=false
+      - GF_UPDATE_CHECK_ENABLED=false
+      - GF_SECURITY_ALLOW_EMBEDDING=false
+      - GF_SECURITY_COOKIE_SECURE=true
+      - GF_SECURITY_X_XSS_PROTECTION=true
+      - GF_SECURITY_X_FRAME_OPTIONS=deny
+      - GF_SECURITY_CONTENT_SECURITY_POLICY=true
+      - GF_FEATURE_TOGGLES_ENABLE=false
+      - GF_TESTDATA_ENABLE=false
     depends_on:
       - visionai-prometheus
     ports:
@@ -133,20 +146,6 @@ services:
       - visionai-network
     depends_on: 
       - visionai-triton
-
-  # ============================================================================
-  # AUXILIARY SERVICES
-  # ============================================================================
-  
-  # VisionAI Screenshots Service - Image capture and storage
-#  visionai-screenshots:
-#    image: visionify/visionai-screenshots:test
-#    container_name: visionai-screenshots
-#    restart: unless-stopped
-#    env_file:
-#      - ./.env
-#    networks:
-#      - visionai-network
 
 # ============================================================================
 # NETWORK CONFIGURATION
