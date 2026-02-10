@@ -63,7 +63,7 @@ services:
       - visionai-triton
     
   visionai-inference-2:
-    image: visionify/visionai-inference:latest
+    image: visionify/visionai-inference:hexion-ehs
     container_name: visionai-inference-2
     restart: always
     deploy:
