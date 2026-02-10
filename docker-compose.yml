@@ -4,64 +4,6 @@ version: '3.8'
 services:
 
   # ============================================================================
-  # MONITORING SERVICES
-  # ============================================================================
-
-  # Prometheus - Metrics collection and storage
-  visionai-prometheus:
-    image: prom/prometheus:latest
-    container_name: visionai-prometheus
-    restart: unless-stopped
-    volumes:
-      - prometheus_data:/prometheus
-      - ./prometheus:/etc/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.enable-lifecycle'
-      - '--storage.tsdb.retention.time=30d'
-    ports:
-      - '9090:9090'
-    networks:
-      - visionai-network
-
-  # Grafana - Metrics visualization and dashboards
-  visionai-grafana:
-    image: grafana/grafana:latest
-    container_name: visionai-grafana
-    restart: unless-stopped
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SERVER_HTTP_PORT=9091
-      - GF_LOG_LEVEL=info
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
-      - GF_ANALYTICS_REPORTING_ENABLED=false
-      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
-      - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
-      - GF_ANALYTICS_GOOGLE_ANALYTICS_UA_ID=
-      - GF_ANALYTICS_FEEDBACK_LINKS_ENABLED=false
-      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=false
-      - GF_PLUGINS_ENABLE_ALPHA=false
-      - GF_UPDATE_CHECK_ENABLED=false
-      - GF_SECURITY_ALLOW_EMBEDDING=false
-      - GF_SECURITY_COOKIE_SECURE=true
-      - GF_SECURITY_X_XSS_PROTECTION=true
-      - GF_SECURITY_X_FRAME_OPTIONS=deny
-      - GF_SECURITY_CONTENT_SECURITY_POLICY=true
-      - GF_FEATURE_TOGGLES_ENABLE=false
-      - GF_TESTDATA_ENABLE=false
-    depends_on:
-      - visionai-prometheus
-    ports:
-      - '9091:9091'
-    networks:
-      - visionai-network
-
-  # ============================================================================
   # AI INFERENCE SERVICES
   # ============================================================================
   
