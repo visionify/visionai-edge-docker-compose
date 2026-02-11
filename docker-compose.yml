@@ -55,7 +55,6 @@ services:
     volumes:
       - ${HOME}/.visionai:/App/.visionai
     environment:
-      - INSTANCE_ID=1
       - METRICS_PORT=3003
     networks:
       - visionai-network
@@ -83,7 +82,6 @@ services:
     volumes:
       - ${HOME}/.visionai:/App/.visionai
     environment:
-      - INSTANCE_ID=2
       - METRICS_PORT=3005
     networks:
       - visionai-network
