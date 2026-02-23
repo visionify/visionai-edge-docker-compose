@@ -60,7 +60,7 @@ services:
     #   dockerfile: Dockerfile
     #   args:
     #     MODELS_AZURE_BLOB_CONNECTION_STRING: ${MODELS_AZURE_BLOB_CONNECTION_STRING}
-    image: visionify/visionai-models:latest
+    image: visionify/visionai-models:test
     container_name: visionai-models-init
     restart: "no"
     volumes:
