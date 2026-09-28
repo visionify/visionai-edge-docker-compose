@@ -9,53 +9,71 @@ services:
   # ============================================================================
   
   # Prometheus - Metrics collection and storage
-  visionai-prometheus:
-    image: prom/prometheus:latest
-    container_name: visionai-prometheus
-    restart: unless-stopped
-    volumes:
-      - prometheus_data:/prometheus
-      - ./prometheus:/etc/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.enable-lifecycle'
-      - '--storage.tsdb.retention.time=30d'
-    ports:
-      - '9090:9090'
-    networks:
-      - visionai-network
+  # visionai-prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: visionai-prometheus
+  #   restart: unless-stopped
+  #   volumes:
+  #     - prometheus_data:/prometheus
+  #     - ./prometheus:/etc/prometheus
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--web.enable-lifecycle'
+  #     - '--storage.tsdb.retention.time=30d'
+  #   ports:
+  #     - '9090:9090'
+  #   networks:
+  #     - visionai-network
 
-  # Grafana - Metrics visualization and dashboards
-  visionai-grafana:
-    image: grafana/grafana:latest
-    container_name: visionai-grafana
-    restart: unless-stopped
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SERVER_HTTP_PORT=9091
-      - GF_LOG_LEVEL=info
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
-    depends_on:
-      - visionai-prometheus
-    ports:
-      - '9091:9091'
-    networks:
-      - visionai-network
+  # # # Grafana - Metrics visualization and dashboards
+  # visionai-grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: visionai-grafana
+  #   restart: unless-stopped
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #     - ./grafana/datasources:/etc/grafana/provisioning/datasources
+  #     - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  #     - GF_SERVER_HTTP_PORT=9091
+  #     - GF_LOG_LEVEL=info
+  #     - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+  #   depends_on:
+  #     - visionai-prometheus
+  #   ports:
+  #     - '9091:9091'
+  #   networks:
+  #     - visionai-network
 
   # ============================================================================
   # AI INFERENCE SERVICES
   # ============================================================================
-  
-  # NVIDIA Triton Inference Server - Model serving engine
+
+  # Model init job - Copies baked models from image into triton_models volume, then exits.
+  # First time: set MODELS_AZURE_BLOB_CONNECTION_STRING in .env, then run:
+  #   docker compose build visionai-models-init && docker compose up -d
+  # visionai-models-init:
+  #   # build:
+  #   #   context: ../visionai-models
+  #   #   dockerfile: Dockerfile
+  #   #   args:
+  #   #     MODELS_AZURE_BLOB_CONNECTION_STRING: ${MODELS_AZURE_BLOB_CONNECTION_STRING}
+  #   image: visionify/visionai-models:latest
+  #   container_name: visionai-models-init
+  #   restart: "no"
+  #   volumes:
+  #     - triton_models:/models
+  #   networks:
+  #     - visionai-network
+
+  # NVIDIA Triton Inference Server - Waits for /models to be ready, then starts serving
   visionai-triton:
     image: nvcr.io/nvidia/tritonserver:23.10-py3
     container_name: visionai-triton
     restart: unless-stopped
+    runtime: nvidia
     deploy:
       restart_policy:
         condition: on-failure
@@ -72,25 +90,20 @@ services:
       - '8001:8001'  # gRPC endpoint
       - '8002:8002'  # Metrics endpoint
     volumes:
-      - $HOME/.visionai/models-repo:/models
-    command: ["tritonserver", "--model-store=/models"]
+      - ${HOME}/.visionai/models-repo:/models
+      # - triton_models:/models
+    command: ["tritonserver", "--model-store=/models"]    
+    # depends_on:
+    #   - visionai-models-init
     networks:
       - visionai-network
 
-  # VisionAI Inference Engine - Main AI processing service
+  # VisionAI Inference Engine - Main AI processing service (uncomment to enable)
   visionai-inference:
-    image: visionify/visionai-inference:test
+    image: visionify/visionai-inference:v2.0.3
     container_name: visionai-inference
     restart: unless-stopped
-    deploy:
-      restart_policy:
-        condition: always
-      resources:
-        reservations:
-          devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
+    runtime: nvidia
     env_file:
       - ./.env
     ports:
@@ -98,54 +111,62 @@ services:
       - '3003:3003'  # Metrics check endpoint
     volumes:
       - ${HOME}/.visionai:/App/.visionai
+      - triton_models:/models
     environment:
       - INSTANCE_ID=1
       - METRICS_PORT=3003
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
     networks:
       - visionai-network
-    depends_on: 
+    depends_on:
       - visionai-triton
 
-  visionai-inference-2:
-    image: visionify/visionai-inference:test
-    container_name: visionai-inference-2
+  # VisionAI Face Recognition - face identification sidecar for visionai-inference.
+  # Image: visionify/visionai-face (multi-arch manifest: linux/amd64 + linux/arm64, built by CI
+  # in visionai-face-recognition). FACE_TAG in .env picks the tag, same scheme as inference:
+  # test (head of main), uat, latest (prod release, default), a version, or sha-<commit>.
+  # Inference POSTs person crops to http://visionai-face:8087/v1/identify; results come back to
+  # http://visionai-inference:3008/v1/face/results. Both hops stay inside visionai-network: the
+  # face API is unauthenticated, so no port is published on the host.
+  # Config: cp face.env.example face.env, fill in the app URL and site token (see README).
+  visionai-face:
+    image: visionify/visionai-face:${FACE_TAG:-latest}
+    container_name: visionai-face
     restart: unless-stopped
-    deploy:
-      restart_policy:
-        condition: always
-      resources:
-        reservations:
-          devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
+    runtime: nvidia
     env_file:
-      - ./.env
-    ports:
-      - '3004:3004'  # API endpoint
-      - '3005:3005'  # Metrics check endpoint
-    volumes:
-      - ${HOME}/.visionai:/App/.visionai
+      - path: ./face.env
+        required: false
     environment:
-      - INSTANCE_ID=2
-      - METRICS_PORT=3005
+      - VISIONAI_FACE_RESULTS_URL=${FACE_RESULTS_URL:-http://visionai-inference:3008/v1/face/results}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - face_data:/data   # SQLite gallery of face templates; survives restarts and upgrades
+    deploy:
+      resources:
+        limits:
+          memory: 10g     # the sidecar's slice of the shared box
     networks:
       - visionai-network
-    depends_on: 
-      - visionai-triton
+    depends_on:
+      - visionai-inference
 
-  # ============================================================================
-  # AUXILIARY SERVICES
-  # ============================================================================
-  
-  # VisionAI Screenshots Service - Image capture and storage
-#  visionai-screenshots:
-#    image: visionify/visionai-screenshots:test
-#    container_name: visionai-screenshots
-#    restart: unless-stopped
-#    env_file:
-#      - ./.env
-#    networks:
+#  visionai-zlm:
+#    image: zlmediakit/zlmediakit:master
+#    container_name: visionai-zlm
+#    network_mode: "visionai-network"
+#    ports:
+#      - "8554:554"
+#      - "1935:1935"
+#      - "8080:80"
+#    environment:
+#      - RTSP_ENABLE_TCP=1
+#      - RTSP_ENABLE_UDP=0
+#    volumes:
+#      - ./zlm-config/config.ini:/opt/media/conf/config.ini:ro
+#    networks: 
 #      - visionai-network
 
 # ============================================================================
@@ -163,4 +184,8 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  triton_models:
+    driver: local
+  face_data:
     driver: local
