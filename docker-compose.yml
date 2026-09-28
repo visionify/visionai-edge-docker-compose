@@ -26,7 +26,7 @@ services:
     networks:
       - visionai-network
 
-  # Grafana - Metrics visualization and dashboards
+  # # Grafana - Metrics visualization and dashboards
   visionai-grafana:
     image: grafana/grafana:latest
     container_name: visionai-grafana
@@ -50,12 +50,30 @@ services:
   # ============================================================================
   # AI INFERENCE SERVICES
   # ============================================================================
-  
-  # NVIDIA Triton Inference Server - Model serving engine
+
+  # Model init job - Copies baked models from image into triton_models volume, then exits.
+  # First time: set MODELS_AZURE_BLOB_CONNECTION_STRING in .env, then run:
+  #   docker compose build visionai-models-init && docker compose up -d
+  visionai-models-init:
+    # build:
+    #   context: ../visionai-models
+    #   dockerfile: Dockerfile
+    #   args:
+    #     MODELS_AZURE_BLOB_CONNECTION_STRING: ${MODELS_AZURE_BLOB_CONNECTION_STRING}
+    image: visionify/visionai-models:latest
+    container_name: visionai-models-init
+    restart: "no"
+    volumes:
+      - triton_models:/models
+    networks:
+      - visionai-network
+
+  # NVIDIA Triton Inference Server - Waits for /models to be ready, then starts serving
   visionai-triton:
     image: nvcr.io/nvidia/tritonserver:23.10-py3
     container_name: visionai-triton
     restart: unless-stopped
+    runtime: nvidia
     deploy:
       restart_policy:
         condition: on-failure
@@ -72,14 +90,16 @@ services:
       - '8001:8001'  # gRPC endpoint
       - '8002:8002'  # Metrics endpoint
     volumes:
-      - $HOME/.visionai/models-repo:/models
-    command: ["tritonserver", "--model-store=/models"]
+      - triton_models:/models
+    command: ["tritonserver", "--model-store=/models"]    
+    depends_on:
+      - visionai-models-init
     networks:
       - visionai-network
 
-  # VisionAI Inference Engine - Main AI processing service
+  # VisionAI Inference Engine - Main AI processing service (uncomment to enable)
   visionai-inference:
-    image: visionify/visionai-inference:test
+    image: visionify/visionai-inference:latest
     container_name: visionai-inference
     restart: unless-stopped
     deploy:
@@ -98,55 +118,14 @@ services:
       - '3003:3003'  # Metrics check endpoint
     volumes:
       - ${HOME}/.visionai:/App/.visionai
+      - triton_models:/models
     environment:
       - INSTANCE_ID=1
       - METRICS_PORT=3003
     networks:
       - visionai-network
-    depends_on: 
+    depends_on:
       - visionai-triton
-
-  visionai-inference-2:
-    image: visionify/visionai-inference:test
-    container_name: visionai-inference-2
-    restart: unless-stopped
-    deploy:
-      restart_policy:
-        condition: always
-      resources:
-        reservations:
-          devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
-    env_file:
-      - ./.env
-    ports:
-      - '3004:3004'  # API endpoint
-      - '3005:3005'  # Metrics check endpoint
-    volumes:
-      - ${HOME}/.visionai:/App/.visionai
-    environment:
-      - INSTANCE_ID=2
-      - METRICS_PORT=3005
-    networks:
-      - visionai-network
-    depends_on: 
-      - visionai-triton
-
-  # ============================================================================
-  # AUXILIARY SERVICES
-  # ============================================================================
-  
-  # VisionAI Screenshots Service - Image capture and storage
-#  visionai-screenshots:
-#    image: visionify/visionai-screenshots:test
-#    container_name: visionai-screenshots
-#    restart: unless-stopped
-#    env_file:
-#      - ./.env
-#    networks:
-#      - visionai-network
 
 # ============================================================================
 # NETWORK CONFIGURATION
@@ -163,4 +142,6 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  triton_models:
     driver: local

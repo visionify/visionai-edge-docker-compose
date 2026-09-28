@@ -1,0 +1,202 @@
+# VisionAI Edge Platform - ARM64 (aarch64) Docker Compose Configuration
+#
+# Target: ASUS Ascent GX10 (NVIDIA GB10 Grace Blackwell, arm64 / SBSA, DGX OS)
+#
+# Usage on the GX10:
+#   docker compose -f docker-compose.arm64.yml up -d
+#   docker compose -f docker-compose.arm64.yml logs -f visionai-inference
+#
+# Differences vs docker-compose.yml (x86_64):
+#   * every service pinned to platform: linux/arm64 so a wrong-arch image fails fast
+#     instead of dying with "exec format error" at runtime
+#   * inference uses the arm64 image tag (INFERENCE_TAG, default latest-arm64)
+#   * Triton bumped 23.10-py3 -> 25.09-py3: 23.10 ships CUDA 12.2 / TensorRT 8.6, which
+#     has no kernels for GB10 Blackwell (sm_121). 25.09-py3 arm64 = CUDA 13.0.1,
+#     TensorRT 10.13.3, cuDNN 9.13, Triton 2.61 - matches the DGX OS 580+ driver.
+#   * GPU exposed via `runtime: nvidia` (nvidia-container-toolkit) rather than a
+#     deploy.resources device reservation - the reservation form is unreliable on
+#     Grace-Blackwell/Tegra-style stacks. `docker info | grep -i runtimes` must list nvidia.
+#   * shm_size / ulimits set on Triton (the 64MB Docker default starves its pinned-memory
+#     pool once more than one ONNX model is loaded)
+#
+# The inference image is built locally on an x86 host under QEMU; it is not on Docker Hub
+# under this tag. Get it onto the GX10 with either:
+#   docker push visionify/visionai-inference:latest-arm64          # then pull on the GX10
+#   docker save visionify/visionai-inference:latest-arm64 | gzip > inf-arm64.tgz
+#   scp inf-arm64.tgz gx10: && ssh gx10 'gunzip -c inf-arm64.tgz | docker load'
+#
+# Model repository: the models under ${HOME}/.visionai/models-repo are ONNX
+# (platform: "onnxruntime_onnx"), so they are architecture independent and need no
+# rebuild. Only TensorRT .plan files would have to be regenerated on the GX10.
+
+services:
+  # ============================================================================
+  # AI INFERENCE SERVICES
+  # ============================================================================
+
+  # NVIDIA Triton Inference Server (arm64 SBSA build)
+  visionai-triton:
+    image: nvcr.io/nvidia/tritonserver:${TRITON_TAG:-25.09-py3}
+    platform: linux/arm64
+    container_name: visionai-triton
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    ports:
+      - '8000:8000'  # HTTP endpoint
+      - '8001:8001'  # gRPC endpoint
+      - '8002:8002'  # Metrics endpoint
+    volumes:
+      - ${HOME}/.visionai/models-repo:/models
+      # - triton_models:/models
+    command: ["tritonserver", "--model-store=/models"]
+    shm_size: '2gb'
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8000 && printf 'GET /v2/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q 200"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+    networks:
+      - visionai-network
+
+  # VisionAI Inference Engine - arm64 build
+  #
+  # Built from visionai-inference @ feature/arm64-docker-images:
+  #   docker buildx build --platform linux/arm64 -f Dockerfile.base.arm64 \
+  #     -t visionify/visionai-base-ml:arm64 --load .
+  #   docker buildx build --platform linux/arm64 -f Dockerfile.arm64 \
+  #     -t visionify/visionai-inference:latest-arm64 --load .
+  #
+  # GPU support in this image, verified by running it:
+  #   torch 2.12.0+cu130  -> CUDA 13.0 aarch64 build, uses the GPU (the comment in
+  #                          Dockerfile.base.arm64 about ARM torch being CPU-only is
+  #                          out of date; PyPI now ships SBSA CUDA wheels)
+  #   onnxruntime 1.28.0  -> CPU only, providers = [Azure, CPU]. There is no
+  #                          onnxruntime-gpu aarch64 wheel, so insightface runs on CPU.
+  # Detection is unaffected either way - it goes to Triton over gRPC.
+  # `runtime: nvidia` is therefore required for the torch paths.
+  visionai-inference:
+    image: visionify/visionai-inference:${INFERENCE_TAG:-latest-arm64}
+    platform: linux/arm64
+    container_name: visionai-inference
+    restart: unless-stopped
+    runtime: nvidia
+    env_file:
+      - ./.env
+    ports:
+      - '3002:3002'  # API endpoint
+      - '3003:3003'  # Metrics check endpoint
+    volumes:
+      - ${HOME}/.visionai:/App/.visionai
+      - triton_models:/models
+    environment:
+      - INSTANCE_ID=1
+      - METRICS_PORT=3003
+      - NVIDIA_VISIBLE_DEVICES=all
+      # This image has no NVDEC-enabled GStreamer/OpenCV (plain opencv-python-headless
+      # + ffmpeg), so `video` is currently unused - harmless, kept for parity with x86.
+      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+    networks:
+      - visionai-network
+    depends_on:
+      visionai-triton:
+        condition: service_healthy
+
+  # ZLMediaKit - RTSP/RTMP media server (zlmediakit:master is a multi-arch manifest,
+  # arm64 variant confirmed present)
+  visionai-zlm:
+    image: zlmediakit/zlmediakit:master
+    platform: linux/arm64
+    container_name: visionai-zlm
+    restart: unless-stopped
+    ports:
+      - "8554:554"
+      - "1935:1935"
+      - "8080:80"
+    environment:
+      - RTSP_ENABLE_TCP=1
+      - RTSP_ENABLE_UDP=0
+    volumes:
+      - ./zlm-config/config.ini:/opt/media/conf/config.ini:ro
+    networks:
+      - visionai-network
+
+  # Model init job - copies baked models into the triton_models volume, then exits.
+  # Only enable this once visionify/visionai-models has an arm64 image published.
+  # visionai-models-init:
+  #   image: visionify/visionai-models:${MODELS_TAG:-latest-arm64}
+  #   platform: linux/arm64
+  #   container_name: visionai-models-init
+  #   restart: "no"
+  #   volumes:
+  #     - triton_models:/models
+  #   networks:
+  #     - visionai-network
+
+  # ============================================================================
+  # MONITORING SERVICES (both images are multi-arch and run as-is on arm64)
+  # ============================================================================
+
+  # visionai-prometheus:
+  #   image: prom/prometheus:latest
+  #   platform: linux/arm64
+  #   container_name: visionai-prometheus
+  #   restart: unless-stopped
+  #   volumes:
+  #     - prometheus_data:/prometheus
+  #     - ./prometheus:/etc/prometheus
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--web.enable-lifecycle'
+  #     - '--storage.tsdb.retention.time=30d'
+  #   ports:
+  #     - '9090:9090'
+  #   networks:
+  #     - visionai-network
+
+  # visionai-grafana:
+  #   image: grafana/grafana:latest
+  #   platform: linux/arm64
+  #   container_name: visionai-grafana
+  #   restart: unless-stopped
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #     - ./grafana/datasources:/etc/grafana/provisioning/datasources
+  #     - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  #     - GF_SERVER_HTTP_PORT=9091
+  #     - GF_LOG_LEVEL=info
+  #     - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+  #   depends_on:
+  #     - visionai-prometheus
+  #   ports:
+  #     - '9091:9091'
+  #   networks:
+  #     - visionai-network
+
+# ============================================================================
+# NETWORK CONFIGURATION
+# ============================================================================
+networks:
+  visionai-network:
+    driver: bridge
+    name: visionai-network
+
+# ============================================================================
+# VOLUME CONFIGURATION
+# ============================================================================
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  triton_models:
+    driver: local
