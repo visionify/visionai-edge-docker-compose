@@ -16,6 +16,7 @@
 #   * GPU exposed via `runtime: nvidia` (nvidia-container-toolkit) rather than a
 #     deploy.resources device reservation - the reservation form is unreliable on
 #     Grace-Blackwell/Tegra-style stacks. `docker info | grep -i runtimes` must list nvidia.
+#   * visionai-face (face recognition sidecar) pinned to linux/arm64; same multi-arch tag as x86
 #   * shm_size / ulimits set on Triton (the 64MB Docker default starves its pinned-memory
 #     pool once more than one ONNX model is loaded)
 #
@@ -108,6 +109,39 @@ services:
       visionai-triton:
         condition: service_healthy
 
+  # VisionAI Face Recognition - face identification sidecar for visionai-inference.
+  # visionify/visionai-face is a multi-arch manifest (linux/amd64 + linux/arm64) built by CI in
+  # visionai-face-recognition, so the same FACE_TAG works here and on x86; `platform` pins the
+  # arm64 variant so a wrong-arch pull fails fast. Runs onnxruntime-gpu (CUDA 13, aarch64 wheel)
+  # on the GB10 via `runtime: nvidia`; falls back to CPU by itself if CUDA is unusable.
+  # Inference POSTs crops to http://visionai-face:8087/v1/identify; results return to
+  # http://visionai-inference:3008/v1/face/results, both inside visionai-network. No host port:
+  # the face API is unauthenticated.
+  # Config: cp face.env.example face.env, fill in the app URL and site token (see README).
+  visionai-face:
+    image: visionify/visionai-face:${FACE_TAG:-latest}
+    platform: linux/arm64
+    container_name: visionai-face
+    restart: unless-stopped
+    runtime: nvidia
+    env_file:
+      - path: ./face.env
+        required: false
+    environment:
+      - VISIONAI_FACE_RESULTS_URL=${FACE_RESULTS_URL:-http://visionai-inference:3008/v1/face/results}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - face_data:/data   # SQLite gallery of face templates; survives restarts and upgrades
+    deploy:
+      resources:
+        limits:
+          memory: 10g     # the sidecar's slice of the GB10's unified memory
+    networks:
+      - visionai-network
+    depends_on:
+      - visionai-inference
+
   # ZLMediaKit - RTSP/RTMP media server (zlmediakit:master is a multi-arch manifest,
   # arm64 variant confirmed present)
   visionai-zlm:
@@ -199,4 +233,6 @@ volumes:
   grafana_data:
     driver: local
   triton_models:
+    driver: local
+  face_data:
     driver: local
