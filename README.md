@@ -113,8 +113,8 @@ same tag works on both; CI in the `visionai-face-recognition` repo builds and pu
 cp face.env.example face.env
 $EDITOR face.env
 
-# 2. Optional, in the root .env: pin a tag (default latest) or point results elsewhere
-#    FACE_TAG=0.1.0
+# 2. Optional, in the root .env: pick a tag (default latest = last prod-v* release; test = head of main)
+#    FACE_TAG=test
 #    FACE_RESULTS_URL=http://visionai-inference:3008/v1/face/results
 
 # 3. Start (or update) it

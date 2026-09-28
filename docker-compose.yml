@@ -124,7 +124,8 @@ services:
 
   # VisionAI Face Recognition - face identification sidecar for visionai-inference.
   # Image: visionify/visionai-face (multi-arch manifest: linux/amd64 + linux/arm64, built by CI
-  # in visionai-face-recognition). FACE_TAG in .env picks the tag: latest, a release, sha-<commit>.
+  # in visionai-face-recognition). FACE_TAG in .env picks the tag, same scheme as inference:
+  # test (head of main), uat, latest (prod release, default), a version, or sha-<commit>.
   # Inference POSTs person crops to http://visionai-face:8087/v1/identify; results come back to
   # http://visionai-inference:3008/v1/face/results. Both hops stay inside visionai-network: the
   # face API is unauthenticated, so no port is published on the host.
