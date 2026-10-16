@@ -100,7 +100,7 @@ services:
 
   # VisionAI Inference Engine - Main AI processing service (uncomment to enable)
   visionai-inference:
-    image: visionify/visionai-inference:v2.0.3
+    image: visionify/visionai-inference:latest
     container_name: visionai-inference
     restart: unless-stopped
     runtime: nvidia
@@ -130,28 +130,28 @@ services:
   # http://visionai-inference:3008/v1/face/results. Both hops stay inside visionai-network: the
   # face API is unauthenticated, so no port is published on the host.
   # Config: cp face.env.example face.env, fill in the app URL and site token (see README).
-  visionai-face:
-    image: visionify/visionai-face:${FACE_TAG:-latest}
-    container_name: visionai-face
-    restart: unless-stopped
-    runtime: nvidia
-    env_file:
-      - path: ./face.env
-        required: false
-    environment:
-      - VISIONAI_FACE_RESULTS_URL=${FACE_RESULTS_URL:-http://visionai-inference:3008/v1/face/results}
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    volumes:
-      - face_data:/data   # SQLite gallery of face templates; survives restarts and upgrades
-    deploy:
-      resources:
-        limits:
-          memory: 10g     # the sidecar's slice of the shared box
-    networks:
-      - visionai-network
-    depends_on:
-      - visionai-inference
+#  visionai-face:
+#    image: visionify/visionai-face:${FACE_TAG:-latest}
+#    container_name: visionai-face
+#    restart: unless-stopped
+#    runtime: nvidia
+#    env_file:
+#      - path: ./face.env
+#        required: false
+#    environment:
+#      - VISIONAI_FACE_RESULTS_URL=${FACE_RESULTS_URL:-http://visionai-inference:3008/v1/face/results}
+#      - NVIDIA_VISIBLE_DEVICES=all
+#      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+#    volumes:
+#      - face_data:/data   # SQLite gallery of face templates; survives restarts and upgrades
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 10g     # the sidecar's slice of the shared box
+#    networks:
+#      - visionai-network
+#    depends_on:
+#      - visionai-inference
 
 #  visionai-zlm:
 #    image: zlmediakit/zlmediakit:master
