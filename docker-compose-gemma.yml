@@ -1,0 +1,74 @@
+# Docker Compose for serving Gemma 4 via vLLM with OpenAI-compatible API.
+#
+# Usage:
+#   docker compose -f docker-compose.gemma.yml --profile e2b up    # Gemma 4 E2B (2B params)
+#   docker compose -f docker-compose.gemma.yml --profile e4b up    # Gemma 4 E4B (4B params)
+#
+# Note: First startup compiles Triton kernels and captures CUDA graphs, which
+# can take 5-10 minutes. Subsequent starts reuse cached compilations.
+#
+# Requires:
+#   export HF_TOKEN=your_huggingface_token
+#
+# The server exposes an OpenAI-compatible API on http://localhost:8100
+#   curl http://localhost:8100/v1/models
+#   curl http://localhost:8100/v1/chat/completions -d '...'
+#
+# GPU Memory (approximate):
+#   E2B: ~12 GiB total (weights ~10 GiB + CUDA graphs ~0.4 GiB + KV cache ~1 GiB)
+#   E4B: ~17 GiB total (weights ~15 GiB + CUDA graphs ~0.5 GiB + KV cache ~1.5 GiB)
+#   Tune --gpu-memory-utilization to control total VRAM budget (fraction of total GPU memory).
+#   Tune --max-model-len to control max context window (512 is plenty for A/B prompts).
+
+services:
+  gemma-e2b:
+    image: vllm/vllm-openai:gemma4
+    ports:
+      - "8100:8000"
+#    environment:
+#      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ipc: host
+    command: >
+      --model google/gemma-4-e2b-it
+      --gpu-memory-utilization 0.40
+      --max-model-len 512
+      --host 0.0.0.0
+      --port 8000
+      --enforce-eager
+    profiles:
+      - e2b
+
+  gemma-e4b:
+    image: vllm/vllm-openai:gemma4
+    ports:
+      - "8100:8000"
+#    environment:
+#      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ipc: host
+    command: >
+      --model google/gemma-4-e4b-it
+      --gpu-memory-utilization 0.55
+      --max-model-len 512
+      --host 0.0.0.0
+      --port 8000
+      --enforce-eager
+    profiles:
+      - e4b

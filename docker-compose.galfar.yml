@@ -1,0 +1,220 @@
+# VisionAI Edge Platform - Galfar-Edge-01 ON-PREM Deployment
+# Fully on-premise: event media stored locally via Azurite (Azure Blob emulator),
+# control-plane + vision-LLM on the site LAN, no public cloud dependency, no Firebase.
+# Production-hardened 2026-10-15: log rotation, localhost-bound operator ports,
+# Triton 25.09 + healthcheck, graceful inference shutdown.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+    compress: "true"
+
+services:
+  # ==========================================================================
+  # ON-PREM STORAGE - Azurite (Azure Blob/Queue/Table emulator)
+  # Event media + recordings are written here instead of Azure cloud blob.
+  # Reached by inference over the bridge as http://visionai-azurite:10000.
+  # ==========================================================================
+  visionai-azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.33.0
+    container_name: visionai-azurite
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - "azurite"
+      - "--blobHost"
+      - "0.0.0.0"
+      - "--queueHost"
+      - "0.0.0.0"
+      - "--tableHost"
+      - "0.0.0.0"
+      - "--location"
+      - "/data"
+      - "--skipApiVersionCheck"
+    volumes:
+      - azurite_data:/data
+    ports:
+      - '127.0.0.1:10000:10000'   # Blob
+      - '127.0.0.1:10001:10001'   # Queue
+      - '127.0.0.1:10002:10002'   # Table
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('net').connect(10000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - visionai-network
+
+  # ==========================================================================
+  # MONITORING
+  # ==========================================================================
+  visionai-prometheus:
+    image: prom/prometheus:latest
+    container_name: visionai-prometheus
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus:/etc/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.retention.time=30d'
+    ports:
+      - '127.0.0.1:9090:9090'
+    networks:
+      - visionai-network
+
+  visionai-grafana:
+    image: grafana/grafana:latest
+    container_name: visionai-grafana
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SERVER_HTTP_PORT=9091
+      - GF_LOG_LEVEL=info
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    depends_on:
+      - visionai-prometheus
+    ports:
+      - '127.0.0.1:9091:9091'
+    networks:
+      - visionai-network
+
+  # ==========================================================================
+  # AI INFERENCE
+  # ==========================================================================
+  visionai-triton:
+    image: nvcr.io/nvidia/tritonserver:25.09-py3
+    container_name: visionai-triton
+    restart: unless-stopped
+    logging: *default-logging
+    shm_size: '2gb'
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+    ports:
+      - '127.0.0.1:8000:8000'
+      - '127.0.0.1:8001:8001'
+      - '127.0.0.1:8002:8002'
+    volumes:
+      - ${HOME}/.visionai/models-repo:/models
+    command: ["tritonserver", "--model-store=/models"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/v2/health/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 8
+      start_period: 240s
+    networks:
+      - visionai-network
+
+  visionai-inference:
+    image: visionify/visionai-inference:latest
+    container_name: visionai-inference
+    restart: unless-stopped
+    logging: *default-logging
+    shm_size: '2gb'
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+    env_file:
+      - ./.env
+    ports:
+      - '3002:3002'                 # API endpoint (LAN-reachable for on-prem app/viewers)
+      - '127.0.0.1:3003:3003'       # metrics (local scrape only)
+    volumes:
+      - ${HOME}/.visionai:/App/.visionai
+    environment:
+      - INSTANCE_ID=1
+      - METRICS_PORT=3003
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+    depends_on:
+      visionai-triton:
+        condition: service_healthy
+      visionai-azurite:
+        condition: service_healthy
+      visionai-ollama:
+        condition: service_healthy
+    networks:
+      - visionai-network
+
+  # ==========================================================================
+  # ON-PREM VISION-LLM - Ollama serving Gemma (local second-pass review)
+  # OpenAI-compatible API at http://visionai-ollama:11434/v1 (chat/completions
+  # accepts image inputs for the vision review). Shares the GPU with Triton.
+  # Model is pulled post-up: docker exec visionai-ollama ollama pull gemma3:4b
+  # ==========================================================================
+  visionai-ollama:
+    image: ollama/ollama:latest
+    container_name: visionai-ollama
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_KEEP_ALIVE=-1          # keep the model resident in VRAM
+      - OLLAMA_MAX_LOADED_MODELS=1
+    volumes:
+      - ollama_data:/root/.ollama     # model store; survives restarts/upgrades
+    ports:
+      - '127.0.0.1:11434:11434'       # local only; inference reaches it on the bridge
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - visionai-network
+
+  # ==========================================================================
+  # OPTIONAL SIDECARS (left disabled for Galfar; enable when needed)
+  #   visionai-face  - face-recognition sidecar (needs face.env + app token)
+  #   visionai-zlm    - ZLMediaKit RTSP/RTMP relay (Galfar pulls RTSP directly)
+  # ==========================================================================
+
+networks:
+  visionai-network:
+    driver: bridge
+    name: visionai-network
+
+volumes:
+  azurite_data:
+    driver: local
+  ollama_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

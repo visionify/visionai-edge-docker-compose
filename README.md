@@ -94,11 +94,44 @@ docker-compose logs -f
 | **Triton** | 8000-8002 | AI model serving | `http://localhost:8000/v2/health/ready` |
 | **Inference** | 3002-3003 | AI processing engine | `http://localhost:3003/health` |
 | **Screenshots** | 8080 | Image capture service | `http://localhost:8080/health` |
+| **Face** | none (8087 internal) | Face identification sidecar for Inference | `docker exec visionai-face python3 -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:8087/readyz').read())"` |
 
 ### Network Configuration
 - **Network**: `visionai-network` (172.20.0.0/16)
 - **Bridge**: Internal communication between services
 - **External**: Ports exposed for monitoring and API access
+
+## Face Recognition (optional sidecar)
+
+`visionai-face` identifies people in the person crops that `visionai-inference` sends it and posts the
+result back to inference. It is part of both `docker-compose.yml` (x86_64) and
+`docker-compose.arm64.yml` (GX10). The image `visionify/visionai-face` is a multi-arch manifest, so the
+same tag works on both; CI in the `visionai-face-recognition` repo builds and pushes it.
+
+```bash
+# 1. Configure: the visionai-app edge API and the site's API token
+cp face.env.example face.env
+$EDITOR face.env
+
+# 2. Optional, in the root .env: pick a tag (default latest = last prod-v* release; test = head of main)
+#    FACE_TAG=test
+#    FACE_RESULTS_URL=http://visionai-inference:3008/v1/face/results
+
+# 3. Start (or update) it
+docker compose pull visionai-face && docker compose up -d visionai-face
+docker compose logs -f visionai-face        # "runs on CUDAExecutionProvider" for both models
+
+# Readiness (models loaded, gallery synced) from inside the network; nothing is published on the host
+docker run --rm --network visionai-network curlimages/curl -s http://visionai-face:8087/readyz
+```
+
+Notes:
+- The face API has no authentication. It publishes no host port on purpose; only containers on
+  `visionai-network` reach it. Inference calls it as `http://visionai-face:8087/v1/identify`.
+- The gallery of face templates lives in the `face_data` volume and is rebuilt from the app by a sync.
+  `docker compose down -v` deletes it (biometric data).
+- To leave the GPU to inference, set `VISIONAI_FACE_EXECUTION_PROVIDER=cpu` in `face.env`.
+- `env_file` with `required: false` needs Docker Compose v2.24 or newer.
 
 ## Configuration Options
 
