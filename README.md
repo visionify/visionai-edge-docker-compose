@@ -26,6 +26,12 @@ curl -fsSL https://raw.githubusercontent.com/visionify/visionai-edge-docker-comp
 
 This installs Docker and the NVIDIA container toolkit if needed and downloads the deployment files to `~/visionai-edge`.
 
+To install into a different folder, set `VISIONAI_DIR` (the folder must be writable by your user) and use that path in the steps below:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/visionify/visionai-edge-docker-compose/motherson-hybrid/get.sh | VISIONAI_DIR=/opt/visionai-edge bash
+```
+
 ## 3. Configure
 
 ```bash
