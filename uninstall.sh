@@ -15,6 +15,10 @@ REPO_DIR="$(pwd)"
 COMPOSE="docker compose"
 DATA_DIR="$(grep -E '^VISIONAI_DATA_DIR=.' .env 2>/dev/null | cut -d= -f2- || true)"
 DATA_DIR="${DATA_DIR:-${HOME}/.visionai}"
+envval() { grep -E "^$1=." .env 2>/dev/null | cut -d= -f2- | tr -d '"\r ' || true; }
+IMG_INFERENCE="visionify/visionai-inference:$(envval VISIONAI_TAG)"; [ "$IMG_INFERENCE" != "visionify/visionai-inference:" ] || IMG_INFERENCE="visionify/visionai-inference:latest"
+IMG_MODELS="visionify/visionai-models:$(envval MODELS_TAG)";          [ "$IMG_MODELS" != "visionify/visionai-models:" ] || IMG_MODELS="visionify/visionai-models:latest"
+IMG_TRITON="nvcr.io/nvidia/tritonserver:$(envval TRITON_TAG)";        [ "$IMG_TRITON" != "nvcr.io/nvidia/tritonserver:" ] || IMG_TRITON="nvcr.io/nvidia/tritonserver:25.09-py3"
 YES=0; PURGE_REPO=0
 for a in "$@"; do
   case "$a" in
@@ -66,7 +70,7 @@ docker logout >/dev/null 2>&1 || true
 step "6/6 Verification"
 left_c=$(docker ps -a --format '{{.Names}}' | grep -E '^visionai-' || true)
 left_v=$(docker volume ls --format '{{.Name}}' | grep -E 'triton_models$' || true)
-left_i=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(visionify/visionai-inference:latest|visionify/visionai-models:latest|nvcr.io/nvidia/tritonserver:)' || true)
+left_i=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -xF -e "$IMG_INFERENCE" -e "$IMG_MODELS" -e "$IMG_TRITON" -e "docker:27-cli" || true)
 if [ -z "$left_c$left_v$left_i" ] && [ ! -d "${DATA_DIR}" ]; then
   echo "Clean: no VisionAI containers, volumes, images or data remain."
 else
