@@ -10,7 +10,7 @@ The Motherson on-prem GPU server runs only the inference stack:
 | `visionai-inference` | `visionify/visionai-inference` | Reads cameras (RTSP), runs detections, sends events to the cloud dashboard |
 | `visionai-watchdog` | `docker:27-cli` | Remote kill switch: removes the deployment when the site token is revoked in the dashboard |
 
-Total install time: ~15 minutes (most of it is image download).
+Total install time: ~15 minutes (most of it is image download). Three commands: the curl one-liner, edit `.env`, `bash install.sh`.
 
 ---
 
@@ -25,76 +25,41 @@ Hand the IT team a filled `.env` (or dictate the `>>> FILL` lines) and the Docke
 
 ---
 
-## 1. Server prerequisites (Motherson IT)
+## 1. Server requirements (Motherson IT)
 
 | Item | Requirement |
 |------|-------------|
-| OS | Ubuntu 22.04 / 24.04 LTS, x86_64 |
-| GPU | NVIDIA (8 GB+ VRAM), driver 550+ installed |
+| OS | Ubuntu 22.04 / 24.04 LTS, x86_64, user with sudo |
+| GPU | NVIDIA (8 GB+ VRAM) with the NVIDIA driver installed (`nvidia-smi` works) |
 | RAM / disk | 16 GB RAM, 100 GB free disk |
-| Network (outbound) | HTTPS (443) to `hub.docker.com`, `*.docker.io`, `nvcr.io`, the Visionify dashboard URL, `*.blob.core.windows.net`, `*.firebasedatabase.app` |
-| Network (inbound, LAN) | RTSP (554) from cameras to this server; port 3002 from the LAN is optional (local API) |
+| Network (outbound) | HTTPS (443) to `github.com`, `hub.docker.com`, `*.docker.io`, `nvcr.io`, the Visionify dashboard URL, `*.blob.core.windows.net`, `*.firebasedatabase.app` |
+| Network (inbound, LAN) | RTSP (554) from cameras to this server |
 
-Quick checks:
-
-```bash
-nvidia-smi                                  # driver OK, GPU listed
-docker --version && docker compose version  # Docker 24+ and compose v2
-docker info | grep -i runtimes              # must list "nvidia"
-```
-
-If Docker or the NVIDIA container toolkit is missing:
-
-```bash
-# Docker
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker $USER && newgrp docker
-
-# NVIDIA container toolkit
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
-  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
-
-# Verify GPU inside a container
-docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
-```
+Docker and the NVIDIA container toolkit are installed by the one-liner below if missing.
 
 ---
 
-## 2. Get the deployment files
+## 2. Install (one command)
 
 ```bash
-git clone -b motherson-hybrid https://github.com/visionify/visionai-edge-docker-compose.git
-cd visionai-edge-docker-compose
+curl -fsSL https://raw.githubusercontent.com/visionify/visionai-edge-docker-compose/motherson-hybrid/get.sh | bash
 ```
 
-(No git on the box? Download the branch ZIP from GitHub and unzip it instead.)
+This installs Docker and the NVIDIA container toolkit if needed, downloads the deployment files to `~/visionai-edge`, and creates `~/visionai-edge/.env` from the template. No prompts.
 
 ---
 
-## 3. Docker Hub login
+## 3. Configure
 
 ```bash
-docker login -u visionify
-# Password: paste the access token provided by Visionify
-```
-
----
-
-## 4. Configure
-
-```bash
-cp .env.example .env
-nano .env
+nano ~/visionai-edge/.env
 ```
 
 Fill every line marked `>>> FILL`:
 
 | Variable | Value |
 |----------|-------|
+| `DOCKERHUB_TOKEN` | Read-only Docker Hub access token provided by Visionify (the only Docker credential; no password) |
 | `VISIONAI_API_ENDPOINT` | Cloud dashboard API URL, e.g. `https://app.visionify.ai/api` |
 | `VISIONAI_API_TOKEN` | Site API token from the dashboard |
 | `EVENTS_AZURE_BLOB_CONNECTION_STRING` | Azure Blob connection string from Visionify |
@@ -104,25 +69,17 @@ Everything else can stay at the defaults.
 
 ---
 
-## 5. Install
-
-One command does the checks, login, pull and start:
+## 4. Run
 
 ```bash
-bash install.sh
+cd ~/visionai-edge && bash install.sh
 ```
 
-Or manually:
-
-```bash
-mkdir -p ~/.visionai
-docker compose pull
-docker compose up -d
-```
+The installer checks GPU access from Docker, logs in to Docker Hub with the token from `.env`, pulls the images, starts the stack and waits for Triton to be healthy. Re-run it any time to apply `.env` changes or upgrade images.
 
 ---
 
-## 6. Verify
+## 5. Verify
 
 ```bash
 docker compose ps
@@ -166,7 +123,7 @@ Logs are rotated automatically (5 x 20 MB per container). The stack restarts on 
 
 | Symptom | Fix |
 |---------|-----|
-| `pull access denied` | `docker login -u visionify` with the access token |
+| `pull access denied` | Check `DOCKERHUB_TOKEN` in `.env`, then `bash install.sh` again |
 | `could not select device driver "nvidia"` | NVIDIA container toolkit not installed / docker not restarted (see step 1) |
 | `visionai-models-init` exited with code 1 | Image has no baked models; `docker compose pull visionai-models-init` and `up -d` again |
 | Triton stays `starting` > 5 min | `docker logs visionai-triton`, check GPU memory with `nvidia-smi` |
@@ -181,7 +138,7 @@ Logs are rotated automatically (5 x 20 MB per container). The stack restarts on 
 To remove the deployment from the server entirely, containers, the models volume, the network, all pulled images, local data in `~/.visionai`, the `.env` and the Docker Hub login:
 
 ```bash
-cd visionai-edge-docker-compose
+cd ~/visionai-edge
 bash uninstall.sh                      # asks you to type DELETE
 bash uninstall.sh --yes                # no prompt
 bash uninstall.sh --yes --purge-repo   # also deletes this folder
