@@ -26,11 +26,20 @@ curl -fsSL https://raw.githubusercontent.com/visionify/visionai-edge-docker-comp
 
 This installs Docker and the NVIDIA container toolkit if needed and downloads the deployment files to `~/visionai-edge`.
 
-To install into a different folder, set `VISIONAI_DIR` (the folder must be writable by your user) and use that path in the steps below:
+Options, set before `bash` when needed:
+
+| Variable | Effect |
+|----------|--------|
+| `VISIONAI_DIR=/path` | Install folder (default `~/visionai-edge`); use that path in the steps below |
+| `DOCKER_DATA_ROOT=/data/docker` | Store Docker images on the large disk instead of the root disk (images total about 25 GB) |
+
+Example for a server whose large disk is mounted at `/data`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/visionify/visionai-edge-docker-compose/motherson-hybrid/get.sh | VISIONAI_DIR=/opt/visionai-edge bash
+curl -fsSL https://raw.githubusercontent.com/visionify/visionai-edge-docker-compose/motherson-hybrid/get.sh | DOCKER_DATA_ROOT=/data/docker bash
 ```
+
+Local VisionAI data (camera configs, cache) goes to the folder set by `VISIONAI_DATA_DIR` in `.env`, `/data/visionai` by default.
 
 ## 3. Configure
 
@@ -71,6 +80,14 @@ visionai-watchdog      Up
 ```
 
 In the Visionify dashboard the site shows **Online** within a minute. Cameras are added in the dashboard, not on the server.
+
+## Update
+
+Run the install command again. It keeps your `.env`, refreshes the deployment files, pulls the newest images and restarts the services:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/visionify/visionai-edge-docker-compose/motherson-hybrid/get.sh | bash
+```
 
 ## Everyday commands
 

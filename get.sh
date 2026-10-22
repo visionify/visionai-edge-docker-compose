@@ -8,6 +8,9 @@
 #   2. installs the NVIDIA container toolkit if missing (NVIDIA driver must already be there)
 #   3. downloads the deployment files into ~/visionai-edge
 #   4. creates ~/visionai-edge/.env from the template
+# Options (environment variables before `bash`):
+#   VISIONAI_DIR=/path        install folder            (default ~/visionai-edge)
+#   DOCKER_DATA_ROOT=/data/docker   keep Docker images on the large disk (default: Docker's own)
 # Then:  edit ~/visionai-edge/.env  ->  cd ~/visionai-edge && bash install.sh
 set -euo pipefail
 
@@ -39,6 +42,21 @@ if [ -n "$SUDO" ] && ! id -nG | grep -qw docker; then
   $SUDO usermod -aG docker "$USER"
   echo "added $USER to the docker group (takes effect at next login; install.sh uses sudo until then)"
 fi
+if [ -n "${DOCKER_DATA_ROOT:-}" ]; then
+  cur="$(dk info -f '{{.DockerRootDir}}' 2>/dev/null || true)"
+  if [ "$cur" != "$DOCKER_DATA_ROOT" ]; then
+    $SUDO mkdir -p "$DOCKER_DATA_ROOT"
+    $SUDO python3 - "$DOCKER_DATA_ROOT" <<'PY'
+import json, sys, os
+p = "/etc/docker/daemon.json"
+cfg = json.load(open(p)) if os.path.exists(p) and os.path.getsize(p) else {}
+cfg["data-root"] = sys.argv[1]
+json.dump(cfg, open(p, "w"), indent=2)
+PY
+    $SUDO systemctl restart docker
+    echo "docker images now stored under $DOCKER_DATA_ROOT"
+  fi
+fi
 echo "$(dk --version)"
 
 step "2/4 NVIDIA container toolkit"
@@ -68,11 +86,17 @@ else
   echo "created $DIR/.env"
 fi
 
+# Already configured (re-run / update): apply the refreshed files and newest images right away.
+if ! grep -q 'REPLACE_WITH' "$DIR/.env"; then
+  echo ".env is configured - updating the running deployment"
+  cd "$DIR" && exec bash install.sh
+fi
+
 cat <<EOF
 
 Done. Two steps remain:
 
-  1. Fill in the values marked  >>> FILL  (Docker Hub token, dashboard URL, site token, blob string):
+  1. Fill in the values marked  >>> FILL  (Docker Hub token and site token):
        nano $DIR/.env
 
   2. Start it:

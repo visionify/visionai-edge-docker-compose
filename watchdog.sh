@@ -16,6 +16,7 @@ INTERVAL="${WATCHDOG_INTERVAL_SECONDS:-300}"
 AFTER_MIN="${DECOMMISSION_AFTER_MINUTES:-120}"
 ENABLED="${DECOMMISSION_ENABLED:-1}"
 SELF_IMAGE="${WATCHDOG_IMAGE:-docker:27-cli}"
+REPO_HOST_PATH="${REPO_HOST_PATH:-$PWD}"   # host path of the deployment folder, set by compose
 first_401=0
 
 log() { echo "$(date -u +%FT%TZ) watchdog: $*"; }
@@ -28,20 +29,22 @@ http_status() {
 
 decommission() {
   log "DECOMMISSION: site token rejected for ${AFTER_MIN} min - removing the VisionAI deployment"
-  docker rm -f visionai-inference visionai-triton visionai-models-init 2>&1 | sed 's/^/  /'
-  docker volume rm -f triton_models 2>&1 | sed 's/^/  /'
-  docker image ls --format '{{.Repository}}:{{.Tag}}' \
-    | grep -E '^(visionify/visionai-inference|visionify/visionai-models|nvcr.io/nvidia/tritonserver|nvidia/cuda)' \
-    | xargs -r docker image rm -f 2>&1 | sed 's/^/  /'
+  # exactly the images this deployment's containers run (inference, triton, models, watchdog)
+  imgs="$(docker ps -a --filter label=com.docker.compose.project=visionai-edge --format '{{.Image}}' | sort -u | tr '\n' ' ')"
+  log "images to remove: $imgs"
+  docker stop -t 30 visionai-inference >/dev/null 2>&1
   if [ -d /host/visionai ]; then
     rm -rf /host/visionai/* /host/visionai/.[!.]* 2>/dev/null
     log "local data wiped"
   fi
   rm -f /host/repo/.env && log ".env removed"
-  # a short-lived helper removes this container, the network, and dangling layers
-  docker run -d --rm -v /var/run/docker.sock:/var/run/docker.sock "$SELF_IMAGE" sh -c \
-    'sleep 5; docker rm -f visionai-watchdog; docker network rm visionai-network; docker image prune -f' >/dev/null
-  log "done - this container is removed in a few seconds"
+  # A detached helper finishes the job after this container is gone: compose stops and
+  # removes the project's containers (this one included), its volumes and its network;
+  # then the images listed above, the GPU-check image and leftovers are removed.
+  docker run -d --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$REPO_HOST_PATH:/host/repo:ro" \
+    -w /host/repo "$SELF_IMAGE" sh -c \
+    "sleep 3; docker compose -p visionai-edge down --volumes --remove-orphans; docker image rm -f $imgs nvidia/cuda:12.4.1-base-ubuntu22.04; docker image prune -f" >/dev/null
+  log "done - compose removes the remaining pieces (containers, volume, network, images) in a few seconds"
   exit 0
 }
 
@@ -51,7 +54,10 @@ while :; do
   code="$(http_status)"
   now=$(date +%s)
   case "$code" in
-    200) [ "$first_401" != 0 ] && log "token accepted again, timer reset"; first_401=0 ;;
+    200)
+      [ "$first_401" != 0 ] && log "token accepted again, timer reset"
+      [ -z "${ok_logged:-}" ] && { log "token accepted by the cloud (200)"; ok_logged=1; }
+      first_401=0 ;;
     401)
       [ "$first_401" = 0 ] && { first_401=$now; log "token REJECTED (401) - decommission in ${AFTER_MIN} min unless it is accepted again"; }
       elapsed=$(( (now - first_401) / 60 ))

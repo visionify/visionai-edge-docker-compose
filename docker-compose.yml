@@ -10,6 +10,8 @@
 # Usage:  docker compose up -d
 # Config: copy .env.example -> .env and fill in the values marked FILL.
 
+name: visionai-edge
+
 x-logging: &default-logging
   driver: json-file
   options:
@@ -88,7 +90,8 @@ services:
               count: all
               capabilities: [gpu]
     env_file:
-      - ./.env
+      - path: ./.env
+        required: false
     ports:
       - '3002:3002'             # API endpoint (LAN)
       - '127.0.0.1:3003:3003'   # metrics (local only)
@@ -118,11 +121,13 @@ services:
     restart: unless-stopped
     logging: *default-logging
     env_file:
-      - ./.env
+      - path: ./.env
+        required: false
     environment:
       - WATCHDOG_INTERVAL_SECONDS=${WATCHDOG_INTERVAL_SECONDS:-300}
       - DECOMMISSION_AFTER_MINUTES=${DECOMMISSION_AFTER_MINUTES:-120}
       - DECOMMISSION_ENABLED=${DECOMMISSION_ENABLED:-1}
+      - REPO_HOST_PATH=${PWD}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${VISIONAI_DATA_DIR:-${HOME}/.visionai}:/host/visionai

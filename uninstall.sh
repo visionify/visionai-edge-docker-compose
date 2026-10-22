@@ -40,23 +40,18 @@ if [ "$YES" != 1 ]; then
   [ "$ans" = "DELETE" ] || { echo "aborted"; exit 1; }
 fi
 
-step "1/6 Stopping and removing containers, network and volumes"
+step "1/6 Stopping and removing containers, network, volumes and images"
 if [ -f docker-compose.yml ]; then
-  $COMPOSE down --volumes --remove-orphans || true
+  # removes the project's containers, named volumes, network and exactly the images it references
+  $COMPOSE down --rmi all --volumes --remove-orphans || true
 fi
 # belt and braces, in case the compose file is missing or names differ
 docker rm -f visionai-inference visionai-triton visionai-models-init visionai-watchdog 2>/dev/null || true
-docker volume rm -f triton_models 2>/dev/null || true
+docker volume rm -f visionai-edge_triton_models 2>/dev/null || true
 docker network rm visionai-network 2>/dev/null || true
 
-step "2/6 Removing images"
-imgs=$(docker image ls --format '{{.Repository}}:{{.Tag}}' \
-  | grep -E '^(visionify/visionai-inference|visionify/visionai-models|nvcr.io/nvidia/tritonserver|nvidia/cuda|docker:27-cli)' || true)
-if [ -n "$imgs" ]; then
-  echo "$imgs" | xargs -r docker image rm -f
-else
-  echo "no deployment images found"
-fi
+step "2/6 Removing helper images"
+docker image rm -f nvidia/cuda:12.4.1-base-ubuntu22.04 2>/dev/null || true
 docker image prune -f >/dev/null 2>&1 || true
 
 step "3/6 Removing local data (${DATA_DIR})"
@@ -70,8 +65,8 @@ docker logout >/dev/null 2>&1 || true
 
 step "6/6 Verification"
 left_c=$(docker ps -a --format '{{.Names}}' | grep -E '^visionai-' || true)
-left_v=$(docker volume ls --format '{{.Name}}' | grep -E '^triton_models$' || true)
-left_i=$(docker image ls --format '{{.Repository}}' | grep -E 'visionify|tritonserver' || true)
+left_v=$(docker volume ls --format '{{.Name}}' | grep -E 'triton_models$' || true)
+left_i=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(visionify/visionai-inference:latest|visionify/visionai-models:latest|nvcr.io/nvidia/tritonserver:)' || true)
 if [ -z "$left_c$left_v$left_i" ] && [ ! -d "${DATA_DIR}" ]; then
   echo "Clean: no VisionAI containers, volumes, images or data remain."
 else

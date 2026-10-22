@@ -21,8 +21,12 @@ if grep -q 'REPLACE_WITH' .env; then
   echo "These lines in .env still need values:"; grep -n 'REPLACE_WITH' .env
   fail "edit .env (nano .env), then run: bash install.sh"
 fi
-DATA_DIR="$(grep -E '^VISIONAI_DATA_DIR=.' .env | cut -d= -f2- || true)"
-mkdir -p "${DATA_DIR:-${HOME}/.visionai}"
+DATA_DIR="$(grep -E '^VISIONAI_DATA_DIR=.' .env | cut -d= -f2- | tr -d '"\r ' || true)"; DATA_DIR="${DATA_DIR:-${HOME}/.visionai}"
+if ! mkdir -p "$DATA_DIR" 2>/dev/null; then
+  sudo mkdir -p "$DATA_DIR" && sudo chown "$(id -u):$(id -g)" "$DATA_DIR"
+fi
+[ -w "$DATA_DIR" ] || fail "data folder $DATA_DIR is not writable by $USER"
+echo "data folder: $DATA_DIR"
 DOCKERHUB_TOKEN="$(grep -E '^DOCKERHUB_TOKEN=.' .env | cut -d= -f2- | tr -d '"\r ' || true)"
 echo ".env OK"
 
@@ -40,6 +44,14 @@ step "4/6 Pulling images (models image is large, this can take a while)"
 $COMPOSE pull
 
 step "5/6 Starting stack"
+# An earlier install under a different compose project name (older files, other folder)
+# would clash on the container names: take it down first, models are re-copied on start.
+for old in $($DOCKER ps -a --filter name='^visionai-' --format '{{.Label "com.docker.compose.project"}}' | sort -u); do
+  if [ -n "$old" ] && [ "$old" != "visionai-edge" ]; then
+    echo "removing previous deployment (project $old)"
+    $COMPOSE -p "$old" down --volumes --remove-orphans >/dev/null 2>&1 || $DOCKER rm -f $($DOCKER ps -aq --filter name='^visionai-') >/dev/null 2>&1 || true
+  fi
+done
 $COMPOSE up -d
 
 step "6/6 Waiting for Triton + inference to become healthy"
