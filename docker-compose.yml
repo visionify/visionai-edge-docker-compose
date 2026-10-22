@@ -1,147 +1,142 @@
-version: '3.8'
+# VisionAI Edge - Motherson HYBRID deployment
+# Dashboard / control-plane / event storage run in Visionify cloud.
+# Only the GPU inference stack runs on the Motherson on-prem box:
+#   1. visionai-models-init  - one-shot job, copies models into the triton_models volume, exits
+#   2. visionai-triton       - NVIDIA Triton model server (starts after models-init finishes)
+#   3. visionai-inference    - VisionAI inference engine (starts after Triton is healthy)
+#   4. visionai-watchdog     - remote kill switch: regenerate the site token in the dashboard
+#                              and the watchdog removes this whole deployment (see watchdog.sh)
+#
+# Usage:  docker compose up -d
+# Config: copy .env.example -> .env and fill in the values marked FILL.
 
-# VisionAI Edge Platform - Docker Compose Configuration
-# This file contains all services required for the VisionAI Edge deployment
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+    compress: "true"
 
 services:
-  # ============================================================================
-  # MONITORING SERVICES
-  # ============================================================================
-  
-  # Prometheus - Metrics collection and storage
-  visionai-prometheus:
-    image: prom/prometheus:latest
-    container_name: visionai-prometheus
-    restart: unless-stopped
-    volumes:
-      - prometheus_data:/prometheus
-      - ./prometheus:/etc/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.enable-lifecycle'
-      - '--storage.tsdb.retention.time=30d'
-    ports:
-      - '9090:9090'
-    networks:
-      - visionai-network
-
-  # # Grafana - Metrics visualization and dashboards
-  visionai-grafana:
-    image: grafana/grafana:latest
-    container_name: visionai-grafana
-    restart: unless-stopped
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SERVER_HTTP_PORT=9091
-      - GF_LOG_LEVEL=info
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
-    depends_on:
-      - visionai-prometheus
-    ports:
-      - '9091:9091'
-    networks:
-      - visionai-network
-
-  # ============================================================================
-  # AI INFERENCE SERVICES
-  # ============================================================================
-
-  # Model init job - Copies baked models from image into triton_models volume, then exits.
-  # First time: set MODELS_AZURE_BLOB_CONNECTION_STRING in .env, then run:
-  #   docker compose build visionai-models-init && docker compose up -d
+  # --------------------------------------------------------------------------
+  # 1. Model init job - populates the triton_models volume from the models
+  #    image, then exits. Re-run (docker compose up -d) to pick up new models.
+  # --------------------------------------------------------------------------
   visionai-models-init:
-    # build:
-    #   context: ../visionai-models
-    #   dockerfile: Dockerfile
-    #   args:
-    #     MODELS_AZURE_BLOB_CONNECTION_STRING: ${MODELS_AZURE_BLOB_CONNECTION_STRING}
-    image: visionify/visionai-models:latest
+    image: visionify/visionai-models:${MODELS_TAG:-latest}
     container_name: visionai-models-init
     restart: "no"
+    logging: *default-logging
     volumes:
       - triton_models:/models
     networks:
       - visionai-network
 
-  # NVIDIA Triton Inference Server - Waits for /models to be ready, then starts serving
+  # --------------------------------------------------------------------------
+  # 2. NVIDIA Triton Inference Server
+  # --------------------------------------------------------------------------
   visionai-triton:
-    image: nvcr.io/nvidia/tritonserver:23.10-py3
+    image: nvcr.io/nvidia/tritonserver:${TRITON_TAG:-25.09-py3}
     container_name: visionai-triton
     restart: unless-stopped
-    runtime: nvidia
+    logging: *default-logging
+    shm_size: '2gb'
+    ulimits:
+      memlock: -1
+      stack: 67108864
     deploy:
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
       resources:
         reservations:
           devices:
-          - driver: nvidia
-            count: 1
-            capabilities: [gpu]
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     ports:
-      - '8000:8000'  # HTTP endpoint
-      - '8001:8001'  # gRPC endpoint
-      - '8002:8002'  # Metrics endpoint
+      - '127.0.0.1:8000:8000'   # HTTP   (local only)
+      - '127.0.0.1:8001:8001'   # gRPC   (local only)
+      - '127.0.0.1:8002:8002'   # metrics (local only)
     volumes:
       - triton_models:/models
-    command: ["tritonserver", "--model-store=/models"]    
+    command: ["tritonserver", "--model-store=/models"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/v2/health/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 8
+      start_period: 240s
     depends_on:
-      - visionai-models-init
+      visionai-models-init:
+        condition: service_completed_successfully
     networks:
       - visionai-network
 
-  # VisionAI Inference Engine - Main AI processing service (uncomment to enable)
+  # --------------------------------------------------------------------------
+  # 3. VisionAI Inference Engine - talks to the cloud dashboard over HTTPS
+  # --------------------------------------------------------------------------
   visionai-inference:
-    image: visionify/visionai-inference:latest
+    image: visionify/visionai-inference:${VISIONAI_TAG:-latest}
     container_name: visionai-inference
     restart: unless-stopped
+    logging: *default-logging
+    shm_size: '2gb'
+    stop_grace_period: 60s
     deploy:
-      restart_policy:
-        condition: always
       resources:
         reservations:
           devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     env_file:
       - ./.env
     ports:
-      - '3002:3002'  # API endpoint
-      - '3003:3003'  # Metrics check endpoint
+      - '3002:3002'             # API endpoint (LAN)
+      - '127.0.0.1:3003:3003'   # metrics (local only)
     volumes:
-      - ${HOME}/.visionai:/App/.visionai
+      - ${VISIONAI_DATA_DIR:-${HOME}/.visionai}:/App/.visionai
       - triton_models:/models
     environment:
       - INSTANCE_ID=1
       - METRICS_PORT=3003
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+    depends_on:
+      visionai-triton:
+        condition: service_healthy
     networks:
       - visionai-network
-    depends_on:
-      - visionai-triton
 
-# ============================================================================
-# NETWORK CONFIGURATION
-# ============================================================================
+  # --------------------------------------------------------------------------
+  # 4. Remote decommission watchdog - needs no access to the box.
+  #    Dashboard: regenerate/delete the site API token -> cloud answers 401 ->
+  #    after DECOMMISSION_AFTER_MINUTES the watchdog wipes containers, models
+  #    volume, images, local data and .env, then removes itself.
+  # --------------------------------------------------------------------------
+  visionai-watchdog:
+    image: docker:27-cli
+    container_name: visionai-watchdog
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - ./.env
+    environment:
+      - WATCHDOG_INTERVAL_SECONDS=${WATCHDOG_INTERVAL_SECONDS:-300}
+      - DECOMMISSION_AFTER_MINUTES=${DECOMMISSION_AFTER_MINUTES:-120}
+      - DECOMMISSION_ENABLED=${DECOMMISSION_ENABLED:-1}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${VISIONAI_DATA_DIR:-${HOME}/.visionai}:/host/visionai
+      - .:/host/repo
+      - ./watchdog.sh:/watchdog.sh:ro
+    entrypoint: ["/bin/sh", "/watchdog.sh"]
+    networks:
+      - visionai-network
+
 networks:
   visionai-network:
     driver: bridge
     name: visionai-network
 
-# ============================================================================
-# VOLUME CONFIGURATION
-# ============================================================================
 volumes:
-  prometheus_data:
-    driver: local
-  grafana_data:
-    driver: local
   triton_models:
     driver: local

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # VisionAI Edge - Motherson hybrid installer (inference + Triton + models-init only)
-# Run from the repo root on the GPU box:   bash install-motherson.sh
+# Run from the repo root on the GPU box:   bash install.sh
 set -euo pipefail
 cd "$(dirname "$0")"
-COMPOSE="docker compose -f docker-compose.motherson.yml"
+COMPOSE="docker compose"
 DOCKERHUB_USER="${DOCKERHUB_USER:-visionify}"
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
@@ -30,8 +30,8 @@ fi
 
 step "3/6 Environment file"
 if [ ! -f .env ]; then
-  cp motherson.env.example .env
-  echo "created .env from motherson.env.example"
+  cp .env.example .env
+  echo "created .env from .env.example"
 fi
 if grep -q 'REPLACE_WITH' .env; then
   echo "The following lines in .env still need values:"; grep -n 'REPLACE_WITH' .env

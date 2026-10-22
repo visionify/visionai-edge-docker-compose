@@ -1,8 +1,4 @@
-# Ignore Prometheus data directory
-prometheus_data/
-
-# Ignore Grafana data directory
-grafana_data/
-
-# Ignore environment configuration files
+# local configuration with credentials
+.env
 *.env
+!.env.example

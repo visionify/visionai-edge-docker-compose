@@ -6,13 +6,13 @@
 #   and (optionally) this repo folder.
 # Does NOT touch Docker itself, the NVIDIA driver, or anything outside this deployment.
 #
-# Usage:  bash uninstall-motherson.sh            # asks for confirmation
-#         bash uninstall-motherson.sh --yes      # no prompt
-#         bash uninstall-motherson.sh --yes --purge-repo   # also deletes this folder
+# Usage:  bash uninstall.sh            # asks for confirmation
+#         bash uninstall.sh --yes      # no prompt
+#         bash uninstall.sh --yes --purge-repo   # also deletes this folder
 set -uo pipefail
 cd "$(dirname "$0")"
 REPO_DIR="$(pwd)"
-COMPOSE="docker compose -f docker-compose.motherson.yml"
+COMPOSE="docker compose"
 DATA_DIR="$(grep -E '^VISIONAI_DATA_DIR=.' .env 2>/dev/null | cut -d= -f2- || true)"
 DATA_DIR="${DATA_DIR:-${HOME}/.visionai}"
 YES=0; PURGE_REPO=0
@@ -41,7 +41,7 @@ if [ "$YES" != 1 ]; then
 fi
 
 step "1/6 Stopping and removing containers, network and volumes"
-if [ -f docker-compose.motherson.yml ]; then
+if [ -f docker-compose.yml ]; then
   $COMPOSE down --volumes --remove-orphans || true
 fi
 # belt and braces, in case the compose file is missing or names differ

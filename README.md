@@ -1,249 +1,210 @@
-# VisionAI Edge Platform - Installation Guide
+# VisionAI Edge - Motherson Hybrid Installation
 
-## Overview
+**Hybrid model:** the VisionAI dashboard, control-plane and event storage run in Visionify cloud.
+The Motherson on-prem GPU server runs only the inference stack:
 
-The VisionAI Edge Platform is a comprehensive AI inference solution that includes monitoring, model serving, and image processing capabilities. This Docker Compose setup provides a complete deployment environment for edge AI applications.
+| Container | Image | Role |
+|-----------|-------|------|
+| `visionai-models-init` | `visionify/visionai-models` | One-shot job: copies AI models into a Docker volume, then exits |
+| `visionai-triton` | `nvcr.io/nvidia/tritonserver:25.09-py3` | NVIDIA Triton model server (starts after models-init) |
+| `visionai-inference` | `visionify/visionai-inference` | Reads cameras (RTSP), runs detections, sends events to the cloud dashboard |
+| `visionai-watchdog` | `docker:27-cli` | Remote kill switch: removes the deployment when the site token is revoked in the dashboard |
 
-## Prerequisites
-
-### System Requirements
-- **OS**: Linux (Ubuntu 20.04+ recommended)
-- **Docker**: Version 20.10+
-- **Docker Compose**: Version 2.0+
-- **NVIDIA GPU**: Compatible with CUDA 12.4+
-- **NVIDIA Docker**: Runtime with GPU support
-- **RAM**: Minimum 8GB, Recommended 16GB+
-- **Storage**: Minimum 50GB available space
-
-### Software Dependencies
-```bash
-# Install Docker (if not already installed)
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-
-# Install Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-
-# Install NVIDIA Docker (for GPU support)
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-sudo apt-get update && sudo apt-get install -y nvidia-docker2
-sudo systemctl restart docker
-```
-
-## Quick Start
-
-### 1. Clone and Setup
-```bash
-# Clone the repository
-git clone <repository-url>
-cd visionai-edge-docker-compose
-
-# Create environment file
-cp .env.example .env
-```
-
-### 2. Configure Environment
-Edit the `.env` file with your specific configuration:
-
-```bash
-# Essential configuration
-VISIONAI_TAG=test                    # or 'latest' for production
-INSTANCE_ID=1                        # Unique instance identifier
-GPU_COUNT=1                          # Number of available GPUs
-GRAFANA_ADMIN_PASSWORD=admin         # Change for production!
-
-# Paths (modify as needed)
-VISIONAI_DATA_PATH=${HOME}/.visionai
-MODELS_PATH=${HOME}/.visionai/models-repo
-SCREENSHOTS_PATH=${HOME}/.visionai/screenshots
-```
-
-### 3. Prepare Directories
-```bash
-# Create necessary directories
-mkdir -p ${HOME}/.visionai/{models-repo,screenshots}
-mkdir -p prometheus grafana/{datasources,dashboards}
-
-# Set proper permissions
-chmod 755 ${HOME}/.visionai
-```
-
-### 4. Deploy Services
-```bash
-# Start all services
-docker-compose up -d
-
-# Check service status
-docker-compose ps
-
-# View logs
-docker-compose logs -f
-```
-
-## Service Architecture
-
-### Core Services
-
-| Service | Port | Description | Health Check |
-|---------|------|-------------|--------------|
-| **Prometheus** | 9090 | Metrics collection and storage | `http://localhost:9090/-/healthy` |
-| **Grafana** | 9091 | Metrics visualization | `http://localhost:9091/api/health` |
-| **Triton** | 8000-8002 | AI model serving | `http://localhost:8000/v2/health/ready` |
-| **Inference** | 3002-3003 | AI processing engine | `http://localhost:3003/health` |
-| **Screenshots** | 8080 | Image capture service | `http://localhost:8080/health` |
-
-### Network Configuration
-- **Network**: `visionai-network` (172.20.0.0/16)
-- **Bridge**: Internal communication between services
-- **External**: Ports exposed for monitoring and API access
-
-## Configuration Options
-
-### Environment Variables
-
-#### Essential Variables
-- `VISIONAI_TAG`: Docker image tag (test/latest)
-- `INSTANCE_ID`: Unique instance identifier
-- `GPU_COUNT`: Number of GPUs to allocate
-- `GRAFANA_ADMIN_PASSWORD`: Grafana admin password
-
-#### Path Configuration
-- `VISIONAI_DATA_PATH`: Main data directory
-- `MODELS_PATH`: AI models repository
-- `SCREENSHOTS_PATH`: Image storage location
-
-#### Monitoring
-- `LOG_LEVEL`: Service logging level (DEBUG/INFO/WARNING/ERROR)
-- `PROMETHEUS_RETENTION`: Metrics retention period
-
-### Volume Management
-```bash
-# View volumes
-docker volume ls
-
-# Backup data
-docker run --rm -v visionai-edge-docker-compose_prometheus_data:/data -v $(pwd):/backup alpine tar czf /backup/prometheus_backup.tar.gz -C /data .
-
-# Restore data
-docker run --rm -v visionai-edge-docker-compose_prometheus_data:/data -v $(pwd):/backup alpine tar xzf /backup/prometheus_backup.tar.gz -C /data
-```
-
-## Monitoring and Troubleshooting
-
-### Health Checks
-All services include health checks. Monitor them with:
-```bash
-# Check all service health
-docker-compose ps
-
-# View health check logs
-docker-compose logs | grep -i health
-```
-
-### Logs and Debugging
-```bash
-# View all logs
-docker-compose logs -f
-
-# View specific service logs
-docker-compose logs -f visionai-inference
-
-# Debug container
-docker-compose exec visionai-inference bash
-```
-
-### Common Issues
-
-#### GPU Not Detected
-```bash
-# Check NVIDIA Docker installation
-docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu20.04 nvidia-smi
-
-# Verify GPU allocation
-docker-compose exec visionai-triton nvidia-smi
-```
-
-#### Port Conflicts
-```bash
-# Check port usage
-sudo netstat -tulpn | grep -E ':(9090|9091|8000|3002|8080)'
-
-# Modify ports in docker-compose.yml if needed
-```
-
-#### Permission Issues
-```bash
-# Fix directory permissions
-sudo chown -R $USER:$USER ${HOME}/.visionai
-chmod -R 755 ${HOME}/.visionai
-```
-
-## Production Deployment
-
-### Security Considerations
-1. **Change default passwords** in `.env`
-2. **Use specific image tags** instead of `latest`
-3. **Configure firewall rules** for exposed ports
-4. **Enable SSL/TLS** for external access
-5. **Regular backups** of volumes and data
-
-### Performance Optimization
-1. **GPU allocation**: Adjust `GPU_COUNT` based on available hardware
-2. **Memory limits**: Set appropriate memory limits for containers
-3. **Storage**: Use SSD storage for better I/O performance
-4. **Network**: Configure proper network isolation
-
-### Scaling
-```bash
-# Scale inference instances
-docker-compose up -d --scale visionai-inference=3
-
-# Load balancing configuration
-# (Add reverse proxy like nginx for multiple instances)
-```
-
-## Maintenance
-
-### Updates
-```bash
-# Update images
-docker-compose pull
-
-# Restart services with new images
-docker-compose up -d
-
-# Clean up old images
-docker image prune -f
-```
-
-### Backups
-```bash
-# Create backup script
-#!/bin/bash
-BACKUP_DIR="/backup/visionai-$(date +%Y%m%d_%H%M%S)"
-mkdir -p $BACKUP_DIR
-
-# Backup volumes
-docker run --rm -v visionai-edge-docker-compose_prometheus_data:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/prometheus_data.tar.gz -C /data .
-docker run --rm -v visionai-edge-docker-compose_grafana_data:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/grafana_data.tar.gz -C /data .
-
-# Backup configuration
-cp docker-compose.yml $BACKUP_DIR/
-cp .env $BACKUP_DIR/
-```
-
-## Support
-
-For technical support and issues:
-- Check service logs: `docker-compose logs`
-- Verify configuration: `docker-compose config`
-- Test connectivity: `curl http://localhost:3003/health`
-
-## License
-
-This project is licensed under the terms specified in the LICENSE file.
+Total install time: ~15 minutes (most of it is image download).
 
 ---
+
+## 0. Before the call (Visionify side)
+
+- Docker Hub **read-only access token** for user `visionify`, label `motherson-edge-pull` (Docker Hub -> Account settings -> Personal access tokens -> Generate, scope **Read-only**).
+- Motherson site created in the cloud dashboard and its **site API token** copied.
+- Azure Blob **connection string** for event media.
+- Firebase service-account values (if realtime features are enabled for the site).
+
+Hand the IT team a filled `.env` (or dictate the `>>> FILL` lines) and the Docker Hub token over a secure channel. Never paste them into chat/email.
+
+---
+
+## 1. Server prerequisites (Motherson IT)
+
+| Item | Requirement |
+|------|-------------|
+| OS | Ubuntu 22.04 / 24.04 LTS, x86_64 |
+| GPU | NVIDIA (8 GB+ VRAM), driver 550+ installed |
+| RAM / disk | 16 GB RAM, 100 GB free disk |
+| Network (outbound) | HTTPS (443) to `hub.docker.com`, `*.docker.io`, `nvcr.io`, the Visionify dashboard URL, `*.blob.core.windows.net`, `*.firebasedatabase.app` |
+| Network (inbound, LAN) | RTSP (554) from cameras to this server; port 3002 from the LAN is optional (local API) |
+
+Quick checks:
+
+```bash
+nvidia-smi                                  # driver OK, GPU listed
+docker --version && docker compose version  # Docker 24+ and compose v2
+docker info | grep -i runtimes              # must list "nvidia"
+```
+
+If Docker or the NVIDIA container toolkit is missing:
+
+```bash
+# Docker
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER && newgrp docker
+
+# NVIDIA container toolkit
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
+
+# Verify GPU inside a container
+docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+```
+
+---
+
+## 2. Get the deployment files
+
+```bash
+git clone -b motherson-hybrid https://github.com/visionify/visionai-edge-docker-compose.git
+cd visionai-edge-docker-compose
+```
+
+(No git on the box? Download the branch ZIP from GitHub and unzip it instead.)
+
+---
+
+## 3. Docker Hub login
+
+```bash
+docker login -u visionify
+# Password: paste the access token provided by Visionify
+```
+
+---
+
+## 4. Configure
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Fill every line marked `>>> FILL`:
+
+| Variable | Value |
+|----------|-------|
+| `VISIONAI_API_ENDPOINT` | Cloud dashboard API URL, e.g. `https://app.visionify.ai/api` |
+| `VISIONAI_API_TOKEN` | Site API token from the dashboard |
+| `EVENTS_AZURE_BLOB_CONNECTION_STRING` | Azure Blob connection string from Visionify |
+| `FIREBASE_*` | Firebase values from Visionify (uncomment the lines) |
+
+Everything else can stay at the defaults.
+
+---
+
+## 5. Install
+
+One command does the checks, login, pull and start:
+
+```bash
+bash install.sh
+```
+
+Or manually:
+
+```bash
+mkdir -p ~/.visionai
+docker compose pull
+docker compose up -d
+```
+
+---
+
+## 6. Verify
+
+```bash
+docker compose ps
+```
+
+Expected:
+
+```
+visionai-models-init   Exited (0)
+visionai-triton        Up (healthy)
+visionai-inference     Up
+```
+
+```bash
+curl -s localhost:8000/v2/health/ready && echo "triton ready"
+docker compose logs -f visionai-inference   # look for "connected" / scenarios starting
+```
+
+Then in the cloud dashboard: the Motherson site shows **Online**, and cameras added in the dashboard start producing events.
+
+---
+
+## Day-2 operations
+
+```bash
+C="docker compose"
+
+$C logs -f visionai-inference        # live logs
+$C restart visionai-inference        # restart inference only
+$C pull && $C up -d                  # upgrade to the newest images
+$C down                              # stop everything (models volume is kept)
+bash uninstall.sh          # full removal, see "Uninstall" below
+docker volume rm triton_models       # force models to be re-copied on next 'up'
+```
+
+Logs are rotated automatically (5 x 20 MB per container). The stack restarts on reboot.
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `pull access denied` | `docker login -u visionify` with the access token |
+| `could not select device driver "nvidia"` | NVIDIA container toolkit not installed / docker not restarted (see step 1) |
+| `visionai-models-init` exited with code 1 | Image has no baked models; `docker compose pull visionai-models-init` and `up -d` again |
+| Triton stays `starting` > 5 min | `docker logs visionai-triton`, check GPU memory with `nvidia-smi` |
+| Inference logs `401` / `403` | Wrong `VISIONAI_API_TOKEN` or `VISIONAI_API_ENDPOINT` in `.env`, then `$C up -d` |
+| Cameras show no frames | RTSP reachability from the server: `ffprobe rtsp://user:pass@camera-ip/...` (or `nc -zv camera-ip 554`) |
+| Events without images | Outbound HTTPS to `*.blob.core.windows.net` blocked by firewall |
+
+---
+
+## Uninstall (full removal)
+
+To remove the deployment from the server entirely, containers, the models volume, the network, all pulled images, local data in `~/.visionai`, the `.env` and the Docker Hub login:
+
+```bash
+cd visionai-edge-docker-compose
+bash uninstall.sh                      # asks you to type DELETE
+bash uninstall.sh --yes                # no prompt
+bash uninstall.sh --yes --purge-repo   # also deletes this folder
+```
+
+The script prints a verification at the end ("Clean: no VisionAI containers, volumes, images or data remain"). Docker and the NVIDIA driver are left installed. Nothing is deleted in the cloud dashboard; disable or delete the site there separately, and revoke the Docker Hub access token in Docker Hub.
+
+## Remote removal from the dashboard (no access to the box needed)
+
+The `visionai-watchdog` container checks the site API token against the cloud every 5 minutes
+(`GET /api/token-details`). Once the cloud has rejected the token (HTTP 401) continuously for
+`DECOMMISSION_AFTER_MINUTES` (default 120), the watchdog runs the same removal as the uninstall
+script by itself: containers, `triton_models` volume, images, local data, `.env`, then its own
+container and the network. Only the small `docker:27-cli` image (about 80 MB) stays behind.
+
+To trigger it from Visionify's side:
+
+1. Dashboard: Settings, Sites, Motherson site, **regenerate** (or delete) the API token. The old token is rejected immediately.
+2. Wait for the grace period. The site goes offline in the dashboard at once; the box cleans itself up at the end of the period.
+3. Revoke the Docker Hub token `motherson-edge-pull`.
+
+Safety rules built into the watchdog: only a 401 from the cloud counts, network outages, 5xx and
+404 responses neither count nor reset the timer, and a 200 resets it. So an internet outage at the
+plant can never trigger a wipe. Rotating the token for any other reason **will** wipe the box after
+the grace period; put the new token into `.env` and restart within that window, or set
+`DECOMMISSION_ENABLED=0` before rotating.
