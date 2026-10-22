@@ -153,6 +153,7 @@ $C logs -f visionai-inference        # live logs
 $C restart visionai-inference        # restart inference only
 $C pull && $C up -d                  # upgrade to the newest images
 $C down                              # stop everything (models volume is kept)
+bash uninstall-motherson.sh          # full removal, see "Uninstall" below
 docker volume rm triton_models       # force models to be re-copied on next 'up'
 ```
 
@@ -171,3 +172,18 @@ Logs are rotated automatically (5 x 20 MB per container). The stack restarts on 
 | Inference logs `401` / `403` | Wrong `VISIONAI_API_TOKEN` or `VISIONAI_API_ENDPOINT` in `.env`, then `$C up -d` |
 | Cameras show no frames | RTSP reachability from the server: `ffprobe rtsp://user:pass@camera-ip/...` (or `nc -zv camera-ip 554`) |
 | Events without images | Outbound HTTPS to `*.blob.core.windows.net` blocked by firewall |
+
+---
+
+## Uninstall (full removal)
+
+To remove the deployment from the server entirely, containers, the models volume, the network, all pulled images, local data in `~/.visionai`, the `.env` and the Docker Hub login:
+
+```bash
+cd visionai-edge-docker-compose
+bash uninstall-motherson.sh                      # asks you to type DELETE
+bash uninstall-motherson.sh --yes                # no prompt
+bash uninstall-motherson.sh --yes --purge-repo   # also deletes this folder
+```
+
+The script prints a verification at the end ("Clean: no VisionAI containers, volumes, images or data remain"). Docker and the NVIDIA driver are left installed. Nothing is deleted in the cloud dashboard; disable or delete the site there separately, and revoke the Docker Hub access token in Docker Hub.
