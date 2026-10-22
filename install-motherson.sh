@@ -37,7 +37,8 @@ if grep -q 'REPLACE_WITH' .env; then
   echo "The following lines in .env still need values:"; grep -n 'REPLACE_WITH' .env
   fail "edit .env (nano .env), then re-run this script"
 fi
-mkdir -p "${HOME}/.visionai"
+DATA_DIR="$(grep -E '^VISIONAI_DATA_DIR=.' .env | cut -d= -f2- || true)"
+mkdir -p "${DATA_DIR:-${HOME}/.visionai}"
 
 step "4/6 Pulling images (models image is large, this can take a while)"
 $COMPOSE pull
@@ -55,6 +56,7 @@ $COMPOSE ps
 echo
 if [ "$(docker inspect -f '{{.State.Health.Status}}' visionai-triton 2>/dev/null)" = "healthy" ]; then
   echo "Triton healthy. Inference should connect to the cloud dashboard within ~1 minute."
+  echo "Watchdog armed: regenerating the site token in the dashboard removes this deployment after $(grep -E '^DECOMMISSION_AFTER_MINUTES=' .env | cut -d= -f2 || echo 120) min."
   echo "Follow logs with:   $COMPOSE logs -f visionai-inference"
 else
   echo "Triton not healthy yet. Check:   $COMPOSE logs visionai-models-init visionai-triton"

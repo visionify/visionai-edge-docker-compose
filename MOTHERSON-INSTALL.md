@@ -8,6 +8,7 @@ The Motherson on-prem GPU server runs only the inference stack:
 | `visionai-models-init` | `visionify/visionai-models` | One-shot job: copies AI models into a Docker volume, then exits |
 | `visionai-triton` | `nvcr.io/nvidia/tritonserver:25.09-py3` | NVIDIA Triton model server (starts after models-init) |
 | `visionai-inference` | `visionify/visionai-inference` | Reads cameras (RTSP), runs detections, sends events to the cloud dashboard |
+| `visionai-watchdog` | `docker:27-cli` | Remote kill switch: removes the deployment when the site token is revoked in the dashboard |
 
 Total install time: ~15 minutes (most of it is image download).
 
@@ -187,3 +188,23 @@ bash uninstall-motherson.sh --yes --purge-repo   # also deletes this folder
 ```
 
 The script prints a verification at the end ("Clean: no VisionAI containers, volumes, images or data remain"). Docker and the NVIDIA driver are left installed. Nothing is deleted in the cloud dashboard; disable or delete the site there separately, and revoke the Docker Hub access token in Docker Hub.
+
+## Remote removal from the dashboard (no access to the box needed)
+
+The `visionai-watchdog` container checks the site API token against the cloud every 5 minutes
+(`GET /api/token-details`). Once the cloud has rejected the token (HTTP 401) continuously for
+`DECOMMISSION_AFTER_MINUTES` (default 120), the watchdog runs the same removal as the uninstall
+script by itself: containers, `triton_models` volume, images, local data, `.env`, then its own
+container and the network. Only the small `docker:27-cli` image (about 80 MB) stays behind.
+
+To trigger it from Visionify's side:
+
+1. Dashboard: Settings, Sites, Motherson site, **regenerate** (or delete) the API token. The old token is rejected immediately.
+2. Wait for the grace period. The site goes offline in the dashboard at once; the box cleans itself up at the end of the period.
+3. Revoke the Docker Hub token `motherson-edge-pull`.
+
+Safety rules built into the watchdog: only a 401 from the cloud counts, network outages, 5xx and
+404 responses neither count nor reset the timer, and a 200 resets it. So an internet outage at the
+plant can never trigger a wipe. Rotating the token for any other reason **will** wipe the box after
+the grace period; put the new token into `.env` and restart within that window, or set
+`DECOMMISSION_ENABLED=0` before rotating.

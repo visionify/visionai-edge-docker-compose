@@ -13,6 +13,8 @@ set -uo pipefail
 cd "$(dirname "$0")"
 REPO_DIR="$(pwd)"
 COMPOSE="docker compose -f docker-compose.motherson.yml"
+DATA_DIR="$(grep -E '^VISIONAI_DATA_DIR=.' .env 2>/dev/null | cut -d= -f2- || true)"
+DATA_DIR="${DATA_DIR:-${HOME}/.visionai}"
 YES=0; PURGE_REPO=0
 for a in "$@"; do
   case "$a" in
@@ -25,11 +27,11 @@ done
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 
 echo "This will remove the VisionAI inference deployment from this machine:"
-echo "  - containers : visionai-inference, visionai-triton, visionai-models-init"
+echo "  - containers : visionai-inference, visionai-triton, visionai-models-init, visionai-watchdog"
 echo "  - volume     : triton_models (AI models)"
 echo "  - network    : visionai-network"
-echo "  - images     : visionify/visionai-inference, visionify/visionai-models, nvcr.io/nvidia/tritonserver"
-echo "  - data       : ${HOME}/.visionai (camera configs, local cache, screenshots)"
+echo "  - images     : visionify/visionai-inference, visionify/visionai-models, nvcr.io/nvidia/tritonserver, docker:27-cli"
+echo "  - data       : ${DATA_DIR} (camera configs, local cache, screenshots)"
 echo "  - Docker Hub login for user visionify"
 [ "$PURGE_REPO" = 1 ] && echo "  - this folder: ${REPO_DIR}"
 echo "Nothing is deleted from the Visionify cloud dashboard."
@@ -43,13 +45,13 @@ if [ -f docker-compose.motherson.yml ]; then
   $COMPOSE down --volumes --remove-orphans || true
 fi
 # belt and braces, in case the compose file is missing or names differ
-docker rm -f visionai-inference visionai-triton visionai-models-init 2>/dev/null || true
+docker rm -f visionai-inference visionai-triton visionai-models-init visionai-watchdog 2>/dev/null || true
 docker volume rm -f triton_models 2>/dev/null || true
 docker network rm visionai-network 2>/dev/null || true
 
 step "2/6 Removing images"
 imgs=$(docker image ls --format '{{.Repository}}:{{.Tag}}' \
-  | grep -E '^(visionify/visionai-inference|visionify/visionai-models|nvcr.io/nvidia/tritonserver|nvidia/cuda)' || true)
+  | grep -E '^(visionify/visionai-inference|visionify/visionai-models|nvcr.io/nvidia/tritonserver|nvidia/cuda|docker:27-cli)' || true)
 if [ -n "$imgs" ]; then
   echo "$imgs" | xargs -r docker image rm -f
 else
@@ -57,8 +59,8 @@ else
 fi
 docker image prune -f >/dev/null 2>&1 || true
 
-step "3/6 Removing local data (${HOME}/.visionai)"
-rm -rf "${HOME}/.visionai"
+step "3/6 Removing local data (${DATA_DIR})"
+rm -rf "${DATA_DIR}"
 
 step "4/6 Removing .env with credentials"
 rm -f "${REPO_DIR}/.env"
@@ -70,7 +72,7 @@ step "6/6 Verification"
 left_c=$(docker ps -a --format '{{.Names}}' | grep -E '^visionai-' || true)
 left_v=$(docker volume ls --format '{{.Name}}' | grep -E '^triton_models$' || true)
 left_i=$(docker image ls --format '{{.Repository}}' | grep -E 'visionify|tritonserver' || true)
-if [ -z "$left_c$left_v$left_i" ] && [ ! -d "${HOME}/.visionai" ]; then
+if [ -z "$left_c$left_v$left_i" ] && [ ! -d "${DATA_DIR}" ]; then
   echo "Clean: no VisionAI containers, volumes, images or data remain."
 else
   echo "Leftovers (remove manually):"; printf '%s\n' $left_c $left_v $left_i

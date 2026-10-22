@@ -4,6 +4,8 @@
 #   1. visionai-models-init  - one-shot job, copies models into the triton_models volume, exits
 #   2. visionai-triton       - NVIDIA Triton model server (starts after models-init finishes)
 #   3. visionai-inference    - VisionAI inference engine (starts after Triton is healthy)
+#   4. visionai-watchdog     - remote kill switch: regenerate the site token in the dashboard
+#                              and the watchdog removes this whole deployment (see watchdog.sh)
 #
 # Usage:  docker compose -f docker-compose.motherson.yml up -d
 # Config: copy motherson.env.example -> .env and fill in the values marked FILL.
@@ -91,7 +93,7 @@ services:
       - '3002:3002'             # API endpoint (LAN)
       - '127.0.0.1:3003:3003'   # metrics (local only)
     volumes:
-      - ${HOME}/.visionai:/App/.visionai
+      - ${VISIONAI_DATA_DIR:-${HOME}/.visionai}:/App/.visionai
       - triton_models:/models
     environment:
       - INSTANCE_ID=1
@@ -101,6 +103,32 @@ services:
     depends_on:
       visionai-triton:
         condition: service_healthy
+    networks:
+      - visionai-network
+
+  # --------------------------------------------------------------------------
+  # 4. Remote decommission watchdog - needs no access to the box.
+  #    Dashboard: regenerate/delete the site API token -> cloud answers 401 ->
+  #    after DECOMMISSION_AFTER_MINUTES the watchdog wipes containers, models
+  #    volume, images, local data and .env, then removes itself.
+  # --------------------------------------------------------------------------
+  visionai-watchdog:
+    image: docker:27-cli
+    container_name: visionai-watchdog
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - ./.env
+    environment:
+      - WATCHDOG_INTERVAL_SECONDS=${WATCHDOG_INTERVAL_SECONDS:-300}
+      - DECOMMISSION_AFTER_MINUTES=${DECOMMISSION_AFTER_MINUTES:-120}
+      - DECOMMISSION_ENABLED=${DECOMMISSION_ENABLED:-1}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${VISIONAI_DATA_DIR:-${HOME}/.visionai}:/host/visionai
+      - .:/host/repo
+      - ./watchdog.sh:/watchdog.sh:ro
+    entrypoint: ["/bin/sh", "/watchdog.sh"]
     networks:
       - visionai-network
 
