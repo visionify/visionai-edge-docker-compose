@@ -107,7 +107,7 @@ The services start automatically after a reboot.
 | Problem | What to do |
 |---------|------------|
 | `pull access denied` | Check `DOCKERHUB_TOKEN` in `.env`, then run `bash install.sh` again |
-| `could not select device driver "nvidia"` | Run the step 2 command again, then `sudo systemctl restart docker` |
+| `unresolvable CDI devices nvidia.com/gpu=...` or `GPU not visible inside docker` | Run the step 2 command again (it sets up GPU access for containers), then `bash install.sh` |
 | Triton stays `starting` for more than 5 minutes | `docker compose logs visionai-triton` and check free GPU memory with `nvidia-smi` |
 | Site stays Offline in the dashboard | Check `VISIONAI_API_TOKEN` in `.env`, then `bash install.sh`. Check the outbound firewall rules in section 1 |
 | Cameras show no video | Check the server can reach the camera: `nc -zv <camera-ip> 554` |

@@ -46,12 +46,15 @@ services:
     ulimits:
       memlock: -1
       stack: 67108864
+    # GPU via CDI, not the legacy nvidia runtime hook: with the hook, any `systemctl daemon-reload`
+    # (apt upgrades, other installers) silently drops the GPU from running containers, and new
+    # model loads / video decoders then fail until the container is recreated. get.sh sets CDI up.
     deploy:
       resources:
         reservations:
           devices:
-            - driver: nvidia
-              count: 1
+            - driver: cdi
+              device_ids: ["nvidia.com/gpu=0"]
               capabilities: [gpu]
     ports:
       - '127.0.0.1:8000:8000'   # HTTP   (local only)
@@ -86,8 +89,8 @@ services:
       resources:
         reservations:
           devices:
-            - driver: nvidia
-              count: all
+            - driver: cdi                    # see visionai-triton
+              device_ids: ["nvidia.com/gpu=all"]
               capabilities: [gpu]
     env_file:
       - path: ./.env

@@ -32,9 +32,10 @@ echo ".env OK"
 
 step "2/6 Checking GPU access from Docker"
 nvidia-smi >/dev/null 2>&1 || fail "nvidia-smi failed - install the NVIDIA driver first"
-$DOCKER run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1 \
-  || fail "GPU not visible inside docker. Re-run get.sh, or: sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker"
-echo "GPU visible in containers"
+# same path the services use (CDI, see docker-compose.yml)
+$DOCKER run --rm --device nvidia.com/gpu=all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1 \
+  || fail "GPU not visible inside docker (CDI). Re-run get.sh (it sets up GPU access for containers), then: bash install.sh"
+echo "GPU visible in containers (CDI)"
 
 step "3/6 Docker Hub login (access token from .env)"
 # Docker Hub access tokens are tied to the visionify account; the token is the only secret.

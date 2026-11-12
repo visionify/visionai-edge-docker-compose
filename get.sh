@@ -6,6 +6,7 @@
 # What it does (no prompts, safe to re-run):
 #   1. installs Docker + compose plugin if missing
 #   2. installs the NVIDIA container toolkit if missing (NVIDIA driver must already be there)
+#      and sets up CDI GPU access for the containers
 #   3. downloads the deployment files into ~/visionai-edge
 #   4. creates ~/visionai-edge/.env from the template
 # Options (environment variables before `bash`):
@@ -70,7 +71,40 @@ if ! (dk info 2>/dev/null | grep -qi 'nvidia'); then
   $SUDO nvidia-ctk runtime configure --runtime=docker
   $SUDO systemctl restart docker
 fi
-echo "nvidia runtime OK ($(nvidia-smi --query-gpu=name --format=csv,noheader | head -1))"
+
+# The containers get the GPU through CDI (docker-compose.yml `driver: cdi`). With the legacy
+# nvidia runtime hook a `systemctl daemon-reload` (apt upgrades, other installers) drops the GPU
+# from running containers; CDI devices survive it. Toolkit 1.18+ ships nvidia-cdi-refresh, which
+# regenerates the CDI spec at boot and after driver updates.
+if ! systemctl cat nvidia-cdi-refresh.service >/dev/null 2>&1; then
+  echo "upgrading the NVIDIA container toolkit (CDI spec refresh needs 1.18 or newer)"
+  { $SUDO apt-get update -qq && $SUDO apt-get install -y -qq nvidia-container-toolkit; } || true
+fi
+if systemctl cat nvidia-cdi-refresh.service >/dev/null 2>&1; then
+  $SUDO systemctl enable --now nvidia-cdi-refresh.path >/dev/null 2>&1 || true
+  $SUDO systemctl restart nvidia-cdi-refresh.service
+else
+  # toolkit without the refresh service: static spec, re-run get.sh after every driver update
+  $SUDO mkdir -p /etc/cdi && $SUDO nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml >/dev/null
+fi
+$SUDO nvidia-ctk cdi list 2>/dev/null | grep -q 'nvidia.com/gpu=all' \
+  || fail "no CDI device for the GPU. Run: sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml, then re-run this script"
+# CDI is on by default from Docker 28; Docker 25-27 need it switched on, older Docker can't do it
+dv="$(dk version -f '{{.Server.Version}}' 2>/dev/null | cut -d. -f1)"
+case "$dv" in ''|*[!0-9]*) dv=0 ;; esac
+[ "$dv" -ge 25 ] || fail "Docker 25 or newer is needed for CDI GPU access (found $(dk --version)). Upgrade: curl -fsSL https://get.docker.com | sudo sh"
+if [ "$dv" -lt 28 ]; then
+  $SUDO python3 - <<'PY'
+import json, os
+p = "/etc/docker/daemon.json"
+cfg = json.load(open(p)) if os.path.exists(p) and os.path.getsize(p) else {}
+cfg.setdefault("features", {})["cdi"] = True
+json.dump(cfg, open(p, "w"), indent=2)
+PY
+  $SUDO systemctl restart docker
+  echo "enabled CDI in Docker $dv"
+fi
+echo "GPU access OK via CDI ($(nvidia-smi --query-gpu=name --format=csv,noheader | head -1))"
 
 step "3/4 Deployment files -> $DIR"
 mkdir -p "$DIR"
